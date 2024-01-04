@@ -57,6 +57,10 @@ mkfs.ext4 /dev/volgroup0/lv_home
 mkdir /mnt/home
 mount /dev/volgroup0/lv_home /mnt/home
 echo "-----------------------------------------------------"
+echo "       Installing base packages for Arch Linux       "
+echo "-----------------------------------------------------"
+pacstrap -i /mnt base --noconfirm --needed
+echo "-----------------------------------------------------"
 echo "                Generating fstab file                "
 echo "       --------------------------------------        "
 echo "       Ensure no errors in fstab output below        "
@@ -64,5 +68,7 @@ echo "-----------------------------------------------------"
 mkdir /mnt/etc
 genfstab -U -p /mnt >> /mnt/etc/fstab
 echo "-----------------------------------------------------"
-echo "              End of formatting script               "
+echo "         Pre-installation complete. Execute          "
+echo "                 >arch-chroot /mnt                   "
+echo "    if no errors found, before running miseEnScene   "
 echo "-----------------------------------------------------"
