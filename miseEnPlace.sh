@@ -3,19 +3,20 @@
 echo "-----------------------------------------------------"
 echo "               Listing available disks               "
 echo "-----------------------------------------------------"
-fdisk -l
+lsblk
 echo -e "\nEnter disk selection to format: ( e.g. [ /dev/sda | /dev/nvme0n1 ] )"
 read TGT_DISK
+umount -a
+sgdisk -Z ${TGT_DISK}
 echo "-----------------------------------------------------"
 echo "              Generating partition table             "
 echo "-----------------------------------------------------"
 sed -e 's/\s*\([\+0-9a-zA-Z]*\).*/\1/' << EOF | fdisk ${TGT_DISK}
-	o # Clears in-memory partition table
 	g # Create new GPT disklabel
 	n # Create new partition
 	1 # Partition 1
 	  # First sector for partition 1 - defaults at byte 2048
-   + 500M # Last sector for partition 1 - incremented by 500Mb from first sector
+    +500M # Last sector for partition 1 - incremented by 500Mb from first sector
    	t # Change partition type for partition 1
 	1 # Select EFI System partition type
 	n # Create new partition
@@ -27,9 +28,9 @@ sed -e 's/\s*\([\+0-9a-zA-Z]*\).*/\1/' << EOF | fdisk ${TGT_DISK}
        44 # Select Linux LVM partition type
        	p # Print partition table
 	w # Write partition table
-	q # Quit
 EOF
 echo -e "\n"
+partprobe ${TGT_DISK}
 echo "-----------------------------------------------------"
 echo "              Formatting EFI partition               "
 echo "-----------------------------------------------------"
@@ -51,11 +52,12 @@ vgchange -ay
 echo "-----------------------------------------------------"
 echo "             Formatting root file system             "
 echo "-----------------------------------------------------"
-mkfs.ext4 /dev/volgroup0/lv_root
+mkfs.ext4 -F /dev/volgroup0/lv_root
 mount /dev/volgroup0/lv_root /mnt
-mkfs.ext4 /dev/volgroup0/lv_home
+mkfs.ext4 -F /dev/volgroup0/lv_home
 mkdir /mnt/home
 mount /dev/volgroup0/lv_home /mnt/home
+mkdir /mnt/etc
 echo "-----------------------------------------------------"
 echo "       Installing base packages for Arch Linux       "
 echo "-----------------------------------------------------"
@@ -65,7 +67,6 @@ echo "                Generating fstab file                "
 echo "       --------------------------------------        "
 echo "       Ensure no errors in fstab output below        "
 echo "-----------------------------------------------------"
-mkdir /mnt/etc
 genfstab -U -p /mnt >> /mnt/etc/fstab
 echo "-----------------------------------------------------"
 echo "         Pre-installation complete. Execute          "
