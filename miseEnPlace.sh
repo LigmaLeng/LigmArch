@@ -1,48 +1,39 @@
 #!/usr/bin/env bash
 
+pacman-key --init
+pacman-key --populate archlinux
+pacman -Sy archlinux-keyring
 echo "-----------------------------------------------------"
 echo "               Listing available disks               "
 echo "-----------------------------------------------------"
 lsblk
 echo -e "\nEnter disk selection to format: ( e.g. [ /dev/sda | /dev/nvme0n1 ] )"
 read TGT_DISK
-umount -a
-sgdisk -Z ${TGT_DISK}
+umount ${TGT_DISK}
+dd if=/dev/zero of=${TGT_DISK} bs=64K status=progress
 echo "-----------------------------------------------------"
 echo "              Generating partition table             "
 echo "-----------------------------------------------------"
-sed -e 's/\s*\([\+0-9a-zA-Z]*\).*/\1/' << EOF | fdisk ${TGT_DISK}
-	g # Create new GPT disklabel
-	n # Create new partition
-	1 # Partition 1
-	  # First sector for partition 1 - defaults at byte 2048
-    +500M # Last sector for partition 1 - incremented by 500Mb from first sector
-   	t # Change partition type for partition 1
-	1 # Select EFI System partition type
-	n # Create new partition
-	2 # Partition 2
-	  # First sector for partition 2 - default to following byte after partition 1
-	  # Last sector for partition 2 - default to end of disk
-	t # Change partition type for following partition
-	2 # Partition 2
-       44 # Select Linux LVM partition type
-       	p # Print partition table
-	w # Write partition table
-EOF
-echo -e "\n"
-partprobe ${TGT_DISK}
+sgdisk -a 2048 -o ${TGT_DISK} # Create new GPT disklabel
+sgdisk -n 1:0:+500M ${TGT_DISK} # Create first partition up to from with last sector offset by 512MB
+sgdisk -n 2:0:0 ${TGT_DISK} # Create second partition with remaining storage space
+sgdisk -t 1:ef00 ${TGT_DISK} # Set partition 1 with EFI System type
+sgdisk -t 2:8e00 ${TGT_DISK} # Set partition 2 with LVM type
 echo "-----------------------------------------------------"
 echo "              Formatting EFI partition               "
 echo "-----------------------------------------------------"
-mkfs.fat -F32 "${TGT_DISK}p1"
+mkfs.fat -F 32 "${TGT_DISK}p1" # Build fat32 format file system on partition 1
 echo -e "\n"
 echo "-----------------------------------------------------"
 echo "         Setting up volumes for LVM partition        "
 echo "-----------------------------------------------------"
-pvcreate --dataalignment 1m "${TGT_DISK}p2"
-vgcreate volgroup0 "${TGT_DISK}p2"
-lvcreate -L 64GB volgroup0 -n lv_root
-lvcreate -l 100%FREE volgroup0 -n lv_home
+pvcreate --dataalignment 1m "${TGT_DISK}p2" # Create physical volume container to separate into logical volumes
+vgcreate volgroup0 "${TGT_DISK}p2" # Declare logical volume group
+lvcreate -L 64GB volgroup0 -n lv_root # Create logical volume for root file system
+lvcreate -l 100%FREE volgroup0 -n lv_home # Create logical volume for non-root file system
+modprobe dm_mod # Load device mapper module into the kernel for to be utilised by lvm2
+vgscan # Have kernel scan for volume group
+vgchange -ay # Activate volume group
 echo "-----------------------------------------------------"
 echo "             Activating logical volumes              "
 echo "-----------------------------------------------------"
@@ -50,7 +41,7 @@ modprobe dm_mod
 vgscan
 vgchange -ay
 echo "-----------------------------------------------------"
-echo "             Formatting root file system             "
+echo "             Formatting logical volumes              "
 echo "-----------------------------------------------------"
 mkfs.ext4 -F /dev/volgroup0/lv_root
 mount /dev/volgroup0/lv_root /mnt
@@ -61,7 +52,9 @@ mkdir /mnt/etc
 echo "-----------------------------------------------------"
 echo "       Installing base packages for Arch Linux       "
 echo "-----------------------------------------------------"
-pacstrap -i /mnt base --noconfirm --needed
+vendor_id=$(grep vendor_id /proc/cpuinfo)
+[[ $vendor_id == *"AuthenticAMD"* ]] && ucode="amd-ucode" || ucode="intel-ucode"
+pacstrap -K /mnt base base-devel linux-lts linux-lts-headers linux-firmware lvm2 neovim openssh networkmanager grub efibootmgr dosfstools os-prober mtools "$ucode" --noconfirm --needed
 echo "-----------------------------------------------------"
 echo "                Generating fstab file                "
 echo "       --------------------------------------        "

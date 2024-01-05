@@ -1,12 +1,17 @@
 
 PKGS=(
 	'base'
+    'base-devel'
 	'linux-lts'
 	'linux-lts-headers'
 	'linux-firmware'
 	'lvm2'
-	'base-devel'
 	'neovim'
 	'openssh'
 	'networkmanager'
+    'grub'
+    'efibootmgr'
+    'dosfstools'
+    'os-prober'
+    'mtools'
 )
