@@ -1,10 +1,38 @@
 ################################################
+# Macros
+################################################
+
+# Generate a positive random integer
+# from ranges 1 to arg1 (inclusive)
+#
+_roll_d() {
+    printf "$(( ( RANDOM % $1 ) + 1 ))"
+}
+
+# Converts 2D index for Linear access to arrays
+#
+# Requires 3 arguments
+# arg1:		column index
+# arg2:		row index
+# arg3:		leading dimension
+#
+_unroll_idx() {
+    local i=$1
+    local j=$2
+    local ld=$3
+    printf "$(( j * ld + i ))"
+}
+
+################################################
+
+
+################################################
 # Framing shorthands
 ################################################
 
-_FRAME_H=11                # Width
+_FRAME_H=11                # Height
 _FRAME_W=13                # Width
-
+#_CARD_BUF=( $(for (( i = 0; i <  ))) )
 _IMG_H=$(( _FRAME_H - 4 )) # Glyph area height
 _IMG_W=$(( _FRAME_W - 6 )) # Glyph area width
 
@@ -19,41 +47,35 @@ _GLYPH_BASE=42
 # Unicode shorthands
 ################################################
 
-_TL="\u2554"		   # Top-Left corner
-_TR="\u2557" 		   # Top-Right corner
-_BL="\u255A" 		   # Bottom-Left corner
-_BR="\u255D" 		   # Bottom-Right corner
-_HB="\u2550" 		   # Horizontal border
-_VB="\u2551" 		   # Vertical border
+_TL="\u2554"		   # Top-Left corner ╔
+_TR="\u2557" 		   # Top-Right corner ╗
+_BL="\u255A" 		   # Bottom-Left corner ╚
+_BR="\u255D" 		   # Bottom-Right corner ╝
+_HB="\u2550" 		   # Horizontal border ═
+_VB="\u2551" 		   # Vertical border ║
 
 # Array of glyphs representing the four
 # suits in a deck of cards
-_SUITS=("\u2660"\
-	"\u2663"\
-	"\u2665"\
-	"\u2666"
+# ♠♣♥♦
+_SUITS=(
+    "\u2660"
+    "\u2663"
+    "\u2665"
+    "\u2666"
 )
 # Array of glyphs representing the gradient of
 # grayscale intensity in descending order
-_GRAD=("\u2592" "\u2591" "#" "\u2261"\
-       	"*" "\u2022" "\u25CB" "\u00B7"
+# ▒░#≡*•○·
+_GRAD=(
+    "\u2592"    
+    "\u2591"    
+    "#"    
+    "\u2261"    
+    "*"    
+    "\u2022"    
+    "\u25CB"    
+    "\u00B7"
 )
-
-################################################
-
-
-################################################
-# Macros
-################################################
-
-# Generate a positive random integer
-#
-# Requires 1 argument
-# arg1: upper bound (inclusive)
-#
-_roll_d() {
-    printf "$(( ( RANDOM % $1 ) + 1 ))"
-}
 
 ################################################
 
@@ -66,10 +88,10 @@ _roll_d() {
 # arg2:    target string to repeat (optional; default = "-")
 #
 repeat() {
-    local tgt="${2:--}"
+    local tmpl="${2:--}"
     local str=""
-    for (( i = 0; i < $1 ; i++ )); do str+=${tgt}; done
-    printf "${str}"
+    for (( i = 0; i < $1 ; i++ )); do str+=$tmpl; done
+    printf "$str"
 }
 
 
@@ -90,3 +112,4 @@ _draw_card_buffer() {
     done
     printf "${_BL}$( repeat $(( _FRAME_W - 2 )) "${_HB}" )${_BR}\n"
 }
+_draw_card_buffer
