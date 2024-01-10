@@ -1,19 +1,50 @@
 #!/usr/bin/env bash
+source ./utils.sh
 
+FTB="\e[1m" # Format Text Bold
+FCR="\e[91m" # Format Colour Red
+FCG="\e[92m" # Format Colour Green
+FCB="\e[34m" # Format Colour Blue
+FCY="\e[93m" # Format Colour Yellow
+FNUL="\e[0m" # Format NULL
+
+SPLASH='
+___________                   _______             ______
+___  /___(_)______ _______ ______    |_______________  /_
+__  / __  /__  __ `/_  __ `__ \_  /| |_  ___/  ___/_  __ \
+_  /___  / _  /_/ /_  / / / / /  ___ |  /   / /__ _  / / /
+/_____/_/  _\__, / /_/ /_/ /_//_/  |_/_/    \___/ /_/ /_/
+           /____/'
+greet() {
+    printf "${FCY}${SPLASH}${FNUL}\n"
+}
+
+# Output and Error handling function
 silence () {
-    $1 > /dev/null/ 2>&1 &
+    # Redirect stdout to the abyss while capturing stderr in variable
+    ERR=$($1 2>&1 > /dev/null/)
+    # If return code of last command is not 0
     if [ "$?" -ne 0 ]; then
-        echo "Warning potential error while executing: $1"
+        printf "${FTB}${FTR}Warning! Error executing command:${FNUL} $1\n"
+    printf "Printing e\n"
     fi
 }
+
+pprint() {
+    local n=${#1}
+    echo "$(repeat $n "-")"
+    echo "${1}"
+    echo "$(repeat $n "-")"
+}
+
 silence "pacman-key --init"
 silence "pacman-key --populate archlinux"
 silence "pacman -Sy archlinux-keyring --noconfirm"
-echo "-----------------------------------------------------"
-echo "               Listing available disks               "
-echo "-----------------------------------------------------"
+
+pprint "Listing available disks"
 lsblk
-echo -e "\nEnter disk selection to format: ( e.g. [ /dev/sda | /dev/nvme0n1 ] )"
+
+printf "\nEnter disk selection to format: ( e.g. [ /dev/sda | /dev/nvme0n1 ] )\n>\n"
 read DISK
 silence "umount ${DISK}"
 dd if=/dev/zero of=${DISK} bs=64K status=progress
@@ -30,7 +61,7 @@ echo "-----------------------------------------------------"
 echo "              Formatting EFI partition               "
 echo "-----------------------------------------------------"
 mkfs.fat -F 32 "${DISK}p1" # Build fat32 format file system on partition 1
-echo -e "\n"
+printf "\n\n"
 echo "-----------------------------------------------------"
 echo "         Setting up volumes for LVM partition        "
 echo "-----------------------------------------------------"
@@ -54,8 +85,8 @@ echo "-----------------------------------------------------"
 echo "       Installing base packages for Arch Linux       "
 echo "-----------------------------------------------------"
 vendor_id=$(grep vendor_id /proc/cpuinfo)
-[[ $vendor_id == *"AuthenticAMD"* ]] && ucode="amd-ucode" || ucode="intel-ucode"
-silent "pacstrap -K /mnt base base-devel linux-lts linux-lts-headers linux-firmware lvm2 neovim openssh networkmanager grub efibootmgr dosfstools os-prober mtools $ucode --noconfirm --needed"
+[[ ${vendor_id} == *"AuthenticAMD"* ]] && ucode="amd-ucode" || ucode="intel-ucode"
+silent "pacstrap -K /mnt base base-devel linux-lts linux-lts-headers linux-firmware lvm2 neovim openssh networkmanager grub efibootmgr dosfstools os-prober mtools man-db man-pages ${ucode} --noconfirm --needed"
 echo "-----------------------------------------------------"
 echo "                Generating fstab file                "
 echo "       --------------------------------------        "
