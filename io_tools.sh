@@ -54,15 +54,6 @@ _BR="\u255D" 		   # Bottom-Right corner ╝
 _HB="\u2550" 		   # Horizontal border ═
 _VB="\u2551" 		   # Vertical border ║
 
-# Array of glyphs representing the four
-# suits in a deck of cards
-# ♠♣♥♦
-_SUITS=(
-    "\u2660"
-    "\u2663"
-    "\u2665"
-    "\u2666"
-)
 # Array of glyphs representing the gradient of
 # grayscale intensity in descending order
 # ▒░#≡*•○·
