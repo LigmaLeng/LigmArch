@@ -27,32 +27,21 @@ _unroll_idx() {
 
 
 ################################################
-# Framing shorthands
+# Display variables
 ################################################
 
-_FRAME_H=11                # Height
-_FRAME_W=13                # Width
+# TTY Dims not inscluding final line
+_FRAME_H=$(( COLUMNS ))    
+_FRAME_W=$(( LINES - 1 ))  
+
 #_CARD_BUF=( $(for (( i = 0; i <  ))) )
-_IMG_H=$(( _FRAME_H - 4 )) # Glyph area height
-_IMG_W=$(( _FRAME_W - 6 )) # Glyph area width
 
-# Decimal base (0101010) to draw 3 vertical
-# glyphs or manipulate bitwise
-_GLYPH_BASE=42 
-
-################################################
-
-
-################################################
-# Unicode shorthands
-################################################
-
-_TL="\u2554"		   # Top-Left corner ╔
-_TR="\u2557" 		   # Top-Right corner ╗
-_BL="\u255A" 		   # Bottom-Left corner ╚
-_BR="\u255D" 		   # Bottom-Right corner ╝
-_HB="\u2550" 		   # Horizontal border ═
-_VB="\u2551" 		   # Vertical border ║
+_TL="\u2554"	# Top-Left corner ╔
+_TR="\u2557" 	# Top-Right corner ╗
+_BL="\u255A" 	# Bottom-Left corner ╚
+_BR="\u255D" 	# Bottom-Right corner ╝
+_HB="\u2550" 	# Horizontal border ═
+_VB="\u2551" 	# Vertical border ║
 
 # Array of glyphs representing the gradient of
 # grayscale intensity in descending order
@@ -83,17 +72,6 @@ repeat() {
     local str=""
     for (( i = 0; i < $1 ; i++ )); do str+=$tmpl; done
     printf "$str"
-}
-
-
-# Helper function to format base10 integer to base2 padded to 7-bits
-#
-# Requires 1 argument
-# arg1: non-negative integer value (max: 127)
-#
-_pad_bits() {
-    local decimal=$1
-    printf "%07d\n" $(echo "obase=2;$decimal" | bc)
 }
 
 _draw_card_buffer() {
