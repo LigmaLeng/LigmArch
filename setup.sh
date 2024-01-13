@@ -1,20 +1,6 @@
 #!/usr/bin/env bash
 source ./utils.sh
 
-FTB="\e[1m" # Format Text Bold
-FCR="\e[91m" # Format Colour Red
-FCG="\e[92m" # Format Colour Green
-FCB="\e[34m" # Format Colour Blue
-FCY="\e[93m" # Format Colour Yellow
-FNUL="\e[0m" # Format NULL
-
-SPLASH='
-___________                   _______             ______
-___  /___(_)______ _______ ______    |_______________  /_
-__  / __  /__  __ `/_  __ `__ \_  /| |_  ___/  ___/_  __ \
-_  /___  / _  /_/ /_  / / / / /  ___ |  /   / /__ _  / / /
-/_____/_/  _\__, / /_/ /_/ /_//_/  |_/_/    \___/ /_/ /_/
-           /____/'
 greet() {
     printf "${FCY}${SPLASH}${FNUL}\n"
 }
