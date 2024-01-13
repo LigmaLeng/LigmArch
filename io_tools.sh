@@ -81,4 +81,3 @@ _draw_card_buffer() {
     done
     printf "${_BL}$( repeat $(( _FRAME_W - 2 )) "${_HB}" )${_BR}\n"
 }
-_draw_card_buffer
