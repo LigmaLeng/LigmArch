@@ -83,6 +83,9 @@ _draw_card_buffer() {
 }
 nap() {
     local IFS # Reset IFS
-    [[ -n "${_temp_fd:-}" ]] || exec {_temp_fd}<> < (:)
+    [[ -n "${_temp_fd:-}" ]] || { exec {_temp_fd}<> <(:); } 2>/dev/null
     read ${1:+-t "$1"} -u $_temp_fd || :
 }
+time for (( i=0; i<1000; i++ )); do nap 0.01; done
+time for (( i=0; i<1000; i++ )); do sleep 0.01; done
+
