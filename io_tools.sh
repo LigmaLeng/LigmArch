@@ -89,16 +89,27 @@ nap() {
 }
 
 dive() {
-    while read -n 1 -s i; do
-        n="$( echo -n $i | od -i -An | tr -d ' ' )"
-        if [[ $n == "127" ]] && [[ ${#in} > 0 ]]; then
+    while read -sN1 i; do
+        n=$(echo -n $i | od -i -An | tr -d " ")
+        if [[ $n == 127 || $n == 8 && ${#in} > 0 ]]; then
             in=${in:0:-1}
-        elif [[ $n == "27" ]]; then
-            exit 0 # ...then quit
+        elif [[ "$n" = "27" ]]; then
+            read -sn1 n
+            if [ "$n" = "[" ]; then
+                read -sn1 n
+                case "$n" in
+                    A) echo "up";;
+                    B) echo "down";;
+                    C) echo "right";;
+                    D) echo "left";;
+                    *) exit 0;;
+                esac
+            else
+                exit 0
+            fi
         else
-            in=$in$i
+            in=$in"$i"
         fi
-        clear
         echo "Search: $in"
     done
 }
