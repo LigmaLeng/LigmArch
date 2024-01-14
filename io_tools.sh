@@ -81,3 +81,8 @@ _draw_card_buffer() {
     done
     printf "${_BL}$( repeat $(( _FRAME_W - 2 )) "${_HB}" )${_BR}\n"
 }
+nap() {
+    local IFS # Reset IFS
+    [[ -n "${_temp_fd:-}" ]] || exec {_temp_fd}<> < (:)
+    read ${1:+-t "$1"} -u $_temp_fd || :
+}
