@@ -1,3 +1,4 @@
+#!/usr/bin/bash
 ################################################
 # Macros
 ################################################
@@ -31,8 +32,8 @@ _unroll_idx() {
 ################################################
 
 # TTY Dims not inscluding final line
-_FRAME_H=$(( COLUMNS ))    
-_FRAME_W=$(( LINES - 1 ))  
+_FRAME_H=$(( COLUMNS ))
+_FRAME_W=$(( LINES - 1 ))
 
 #_CARD_BUF=( $(for (( i = 0; i <  ))) )
 
@@ -47,13 +48,13 @@ _VB="\u2551" 	# Vertical border ║
 # grayscale intensity in descending order
 # ▒░#≡*•○·
 _GRAD=(
-    "\u2592"    
-    "\u2591"    
-    "#"    
-    "\u2261"    
-    "*"    
-    "\u2022"    
-    "\u25CB"    
+    "\u2592"
+    "\u2591"
+    "#"
+    "\u2261"
+    "*"
+    "\u2022"
+    "\u25CB"
     "\u00B7"
 )
 
@@ -87,9 +88,18 @@ nap() {
     read ${1:+-t "$1"} -u $_temp_fd || :
 }
 
-keyecho() {
-    while(1){
-        read -rsn1 kbin
-            
-    }
+dive() {
+    while read -n 1 -s i; do
+        n="$( echo -n $i | od -i -An | tr -d ' ' )"
+        if [[ $n == "127" ]] && [[ ${#in} > 0 ]]; then
+            in=${in:0:-1}
+        elif [[ $n == "27" ]]; then
+            exit 0 # ...then quit
+        else
+            in=$in$i
+        fi
+        clear
+        echo "Search: $in"
+    done
 }
+dive
