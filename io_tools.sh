@@ -110,7 +110,9 @@ dive() {
         else
             in=$in"$i"
         fi
+        clear
         echo "Search: $in"
+        grep -im 10 "$in" lc.txt
     done
 }
 dive
