@@ -1,7 +1,13 @@
 #!/usr/bin/bash
+
 ################################################
 # Macros
 ################################################
+
+die() {
+    printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
+    exit 1
+}
 
 # Generate a positive random integer
 # from ranges 1 to arg1 (inclusive)
@@ -89,30 +95,47 @@ nap() {
 }
 
 dive() {
-    while read -sN1 i; do
-        n=$(echo -n $i | od -i -An | tr -d " ")
-        if [[ $n == 127 || $n == 8 && ${#in} > 0 ]]; then
-            in=${in:0:-1}
-        elif [[ "$n" = "27" ]]; then
-            read -sn1 n
-            if [ "$n" = "[" ]; then
-                read -sn1 n
-                case "$n" in
-                    A) echo "up";;
-                    B) echo "down";;
-                    C) echo "right";;
-                    D) echo "left";;
-                    *) exit 0;;
-                esac
-            else
-                exit 0
-            fi
+    local char
+    local sp
+    local str
+
+    # Read single byte/char from stdin 
+    # (expects special characters to be handled downstream)
+    while read -sN1 char; do
+        # Filter first byte to convert ANSI control codes (if present)
+        #     od (output display) flags:
+        #         -i    display 16-bit words as signed decimal
+        #         -An   don't precede output line with input offset
+        #     tr (transform) flags:
+        #         -d    delete
+        sp=$(echo -n $char | od -i -An | tr -d " ")
+        
+        # Control codes if interested
+        # 127   (\0x7B)    Backspace
+        # 8     (\0x08)    Alternative backspace
+        # 27    (\0x33)    ESC
+        if [[ $sp == 127 || $sp == 8 && ${#str} > 0 ]]; then
+            str=${str:0:-1} # Strip last char
+        elif [[ "$sp" = "27" ]]; then
+            # Because ESC is read in one byte
+            # Detecting control sequence indicators ('[' + sequence)
+            # is broken down into multiple steps
+            read -sn1 sp
+            [ "$sp" != "[" ] && die
+            read -sn1 sp
+            case "$sp" in
+                A) echo "up";;
+                B) echo "down";;
+                C) echo "right";;
+                D) echo "left";;
+                *) exit 0;;
+            esac
         else
-            in=$in"$i"
+            str=$str"$char"
         fi
         clear
-        echo "Search: $in"
-        grep -im 10 "$in" lc.txt
+        echo "Search: $str"
+        grep -im 10 "$str" lc.txt
     done
 }
 dive
