@@ -1,5 +1,7 @@
 #!/usr/bin/bash
 
+read -r LINES COLUMNS < <(stty size)
+
 ################################################
 # Macros
 ################################################
@@ -36,10 +38,6 @@ _unroll_idx() {
 ################################################
 # Display variables
 ################################################
-
-# TTY Dims not inscluding final line
-_FRAME_H=$(( COLUMNS ))
-_FRAME_W=$(( LINES - 1 ))
 
 #_CARD_BUF=( $(for (( i = 0; i <  ))) )
 
@@ -81,13 +79,17 @@ repeat() {
     printf "$str"
 }
 
-_draw_card_buffer() {
-    printf "${_TL}$( repeat $(( _FRAME_W - 2 )) "${_HB}" )${_TR}\n"
-    for (( i = 0; i < _FRAME_H - 2; i++ )); do
-        printf "${_VB}$( repeat $(( _FRAME_W - 2 )) "\u0020" )${_VB}\n"
+_draw_frame() {
+    local canvas_w=$(( ${1:-COLUMNS} - 2 ))
+    local canvas_h=$(( ${2:-LINES} - 2 ))
+
+    printf "\e[31m\u2554$( repeat $canvas_w "\u2550" )\u2557\n"
+    for (( i = 0; i < $canvas_h; i++ )); do
+        printf "\u2551$( repeat $canvas_w "\u0020" )\u2551\n"
     done
-    printf "${_BL}$( repeat $(( _FRAME_W - 2 )) "${_HB}" )${_BR}\n"
+    printf "\u255A$( repeat $canvas_w "\u2550" )\u255D\e[m\n\e[2;2H"
 }
+
 nap() {
     local IFS # Reset IFS
     [[ -n "${_temp_fd:-}" ]] || { exec {_temp_fd}<> <(:); } 2>/dev/null
@@ -134,6 +136,7 @@ dive() {
             str=$str"$char"
         fi
         clear
+	_draw_frame 160 44
         echo "Search: $str"
         grep -im 10 "$str" lc.txt
     done
