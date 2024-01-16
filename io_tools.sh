@@ -1,15 +1,33 @@
 #!/usr/bin/bash
 
+die() {
+    # Resets screen and cursor
+    printf "\e[m\e[;r\e[2J\e[?25h"
+    # Output to stderr
+    printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
+    exit 1
+}
+trap "die" SIGINT SIGTERM
+
+
 read -r LINES COLUMNS < <(stty size)
+declare -A _OPTS=(
+[keymap]="us"
+[partition_type]="linux-lvm"
+[kernel]="linux-lts"
+[network]="network-manager"
+[locale]="en-AU"
+[username]=""
+[hostname]=""
+[rootpass]=""
+[userpass]=""
+)
+
 
 ################################################
 # Macros
 ################################################
 
-die() {
-    printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
-    exit 1
-}
 
 # Generate a positive random integer
 # from ranges 1 to arg1 (inclusive)
@@ -79,6 +97,8 @@ repeat() {
     printf "$str"
 }
 
+_set_cursor
+
 _draw_frame() {
     local canvas_w=$(( ${1:-COLUMNS} - 2 ))
     local canvas_h=$(( ${2:-LINES} - 2 ))
@@ -88,12 +108,13 @@ _draw_frame() {
         printf "\u2551$( repeat $canvas_w "\u0020" )\u2551\n"
     done
     printf "\u255A$( repeat $canvas_w "\u2550" )\u255D\e[m\n\e[2;2H"
+
 }
 
 nap() {
     local IFS # Reset IFS
-    [[ -n "${_temp_fd:-}" ]] || { exec {_temp_fd}<> <(:); } 2>/dev/null
-    read ${1:+-t "$1"} -u $_temp_fd || :
+    [[ -n "${_nap_fd:-}" ]] || { exec {_nap_fd}<> <(:); } 2>/dev/null
+    read ${1:+-t "$1"} -u $_nap_fd || :
 }
 
 dive() {
@@ -136,9 +157,9 @@ dive() {
             str=$str"$char"
         fi
         clear
-	_draw_frame 160 44
+	    _draw_frame 160 44
         echo "Search: $str"
         grep -im 10 "$str" lc.txt
     done
 }
-dive
+#dive
