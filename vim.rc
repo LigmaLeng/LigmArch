@@ -24,7 +24,7 @@ set wildmenu
 set wildmode=list:longest
 set showmatch
 set matchpairs=(:),{:},[:],<:>
-set shortmess=aostI
+set shortmess=aost
 set number
 set relativenumber
 set incsearch
