@@ -15,7 +15,7 @@ set smarttab
 set backspace=2
 
 " Persistence
-if has ("persistent_undo")
+if has("persistent_undo")
     set undodir=~/.vim/undo
     set undofile
 endif
@@ -23,7 +23,6 @@ endif
 " UI
 set lazyredraw
 set ttyfast
-set visualbell
 set laststatus=2
 set showcmd
 set showmode
@@ -45,7 +44,6 @@ set splitright
 set autowrite
 set cursorline
 set scrolloff=5
-set statusline=\ %Y\ %m\ Idx[\ %l,\ %c\ ]\ =\ 0x%B%=\ %F\ %r\ 
 
 " AUTOCOMMAND 
 augroup vimrc_c_vert_h
@@ -60,9 +58,9 @@ augroup vimrc_tg_cul
 augroup END
 
 " Mappings
-let mapleader=<Space>
+nnoremap <Space> <nop>
+let mapleader=" "
 xnoremap <Leader>p "_dp
-nnoremap <Leader>
 nnoremap <Leader><Leader> :noh<CR>
 nnoremap <C-D> <C-D>zz
 nnoremap <C-U> <C-U>zz
@@ -73,3 +71,4 @@ nnoremap N Nzz
 nnoremap { {zz
 nnoremap } }zz
 
+set statusline=\ %Y\ %m\ Idx[\ %l,\ %c\ ]\ =\ 0x%B%=\ %F\ %r\ 
