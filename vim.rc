@@ -62,7 +62,6 @@ let mapleader=" "
 xnoremap <Leader>p "_dp
 xnoremap <Leader>htns :qa
 nnoremap <Leader><Leader> :noh<CR>
-nnoremap <C-]> <C-]>
 nnoremap <C-D> <C-D>zz
 nnoremap <C-U> <C-U>zz
 nnoremap o o<ESC>
