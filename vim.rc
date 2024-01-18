@@ -13,13 +13,6 @@ set tabstop=4
 set expandtab
 set smarttab
 set backspace=2
-
-" Persistence
-if has("persistent_undo")
-    set undodir=~/.vim/undo
-    set undofile
-endif
-
 " UI
 set lazyredraw
 set ttyfast
@@ -46,29 +39,37 @@ set cursorline
 set scrolloff=5
 
 " AUTOCOMMAND 
-augroup vimrc_c_vert_h
-    autocmd!
-    autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
-augroup END
-
 augroup vimrc_tg_cul
     autocmd!
     autocmd WinLeave * set nocursorline
     autocmd WinLeave * set cursorline
 augroup END
 
+augroup vimrc_c_vert_h
+    autocmd!
+    autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
+augroup END
+
+" Persistence
+if has("persistent_undo")
+    set undodir=~/.vim/undo
+    set undofile
+endif
+
 " Mappings
 nnoremap <Space> <nop>
 let mapleader=" "
 xnoremap <Leader>p "_dp
+xnoremap <Leader>htns :qa
 nnoremap <Leader><Leader> :noh<CR>
+nnoremap <C-]> <C-]>
 nnoremap <C-D> <C-D>zz
 nnoremap <C-U> <C-U>zz
-nnoremap o o<CR>
-nnoremap O O<CR>
+nnoremap o o<ESC>
+nnoremap O O<ESC>
 nnoremap n nzz
 nnoremap N Nzz
 nnoremap { {zz
 nnoremap } }zz
 
-set statusline=\ %Y\ %m\ Idx[\ %l,\ %c\ ]\ =\ 0x%B%=\ %F\ %r\ 
+set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r
