@@ -1,16 +1,7 @@
-#!/usr/bin/env/ bash
+#!/usr/bin/bash
 
 
-trap 'die "Interrupted"' SIGINT SIGHUP SIGTERM
-_set_tty() {
-    stty_bak=$( stty -g | tee stty.bak )
-    stty -icanon -nl -echo isig
-}
-
-_redeem() {
-    stty "$stty_bak"
-}
-
+trap 'die "Interrupted"' SIGINT
 die() {
     # Resets screen and cursor
     printf "\e[m\e[;r\e[2J\e[?25h"
@@ -106,6 +97,7 @@ repeat() {
     printf "$str"
 }
 
+_set_cursor
 
 _draw_frame() {
     local canvas_w=$(( ${1:-COLUMNS} - 2 ))
@@ -119,7 +111,6 @@ _draw_frame() {
 
 }
 
-
 nap() {
     local IFS # Reset IFS
     [[ -n "${_nap_fd:-}" ]] || { exec {_nap_fd}<> <(:); } 2>/dev/null
@@ -131,14 +122,44 @@ dive() {
     local sp
     local str
 
+    # Read single byte/char from stdin 
+    # (expects special characters to be handled downstream)
     while read -sN1 char; do
-        ((0x1B == char)) && echo "esc"
-        case $char in
-            $'\x7F'|$'\x08') [ -z "$str" ] && str=${str:0:-1};;
-            $'\n') echo "ent";;
-            ' ') echo "spaco";;
-        esac
+        # Filter first byte to convert ANSI control codes (if present)
+        #     od (output display) flags:
+        #         -i    display 16-bit words as signed decimal
+        #         -An   don't precede output line with input offset
+        #     tr (transform) flags:
+        #         -d    delete
+        sp=$(echo -n $char | od -i -An | tr -d " ")
+        
+        # Control codes if interested
+        # 127   (\0x7B)    Backspace
+        # 8     (\0x08)    Alternative backspace
+        # 27    (\0x33)    ESC
+        if [[ $sp == 127 || $sp == 8 && ${#str} > 0 ]]; then
+            str=${str:0:-1} # Strip last char
+        elif [[ "$sp" = "27" ]]; then
+            # Because ESC is read in one byte
+            # Detecting control sequence indicators ('[' + sequence)
+            # is broken down into multiple steps
+            read -sn1 sp
+            [ "$sp" != "[" ] && die
+            read -sn1 sp
+            case "$sp" in
+                A) echo "up";;
+                B) echo "down";;
+                C) echo "right";;
+                D) echo "left";;
+                *) exit 0;;
+            esac
+        else
+            str=$str"$char"
+        fi
+        clear
+	    _draw_frame 160 44
+        echo "Search: $str"
+        grep -im 10 "$str" lc.txt
     done
 }
 #dive
-stty -a
