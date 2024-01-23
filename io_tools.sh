@@ -18,7 +18,6 @@
 #  (DELETE INCLUDING DECLARATION IF NONE)
 #  eg: 0 if thing was deleted, non-zero on error
 ########################################
-
 set_tty() {
   stty_bak=$( stty -g | tee stty.bak )
   stty -icanon -nl -echo isig
@@ -49,12 +48,6 @@ declare -A _OPTS=(
 [userpass]=""
 )
 
-
-################################################
-# Macros
-################################################
-
-
 # Generate a positive random integer
 # from ranges 1 to arg1 (inclusive)
 #
@@ -62,13 +55,6 @@ roll_d() {
   printf "$(( ( RANDOM % $1 ) + 1 ))"
 }
 
-# Converts 2D index for Linear access to arrays
-#
-# Requires 3 arguments
-# arg1:		column index
-# arg2:		row index
-# arg3:		leading dimension
-#
 unroll_idx() {
   local i=$1
   local j=$2
@@ -76,15 +62,7 @@ unroll_idx() {
   printf "$(( j * ld + i ))"
 }
 
-################################################
-
-
-################################################
-# Display variables
-################################################
-
 #_CARD_BUF=( $(for (( i = 0; i <  ))) )
-
 TL="\u2554"	# Top-Left corner ╔
 TR="\u2557" 	# Top-Right corner ╗
 BL="\u255A" 	# Bottom-Left corner ╚
@@ -106,7 +84,6 @@ GRAD=(
   "\u00B7"
 )
 
-################################################
 
 
 # Function to repeat given string n number of times
