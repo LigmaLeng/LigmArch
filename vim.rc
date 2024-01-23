@@ -5,11 +5,11 @@ filetype on
 filetype plugin on
 syntax on
 set nocompatible
-set shiftwidth=4
+set shiftwidth=2
 set shiftround
 set autoindent
 set smartindent
-set tabstop=4
+set tabstop=2
 set expandtab
 set smarttab
 set backspace=2
@@ -40,27 +40,29 @@ set scrolloff=5
 
 " AUTOCOMMAND 
 augroup vimrc_tg_cul
-    autocmd!
-    autocmd WinLeave * set nocursorline
-    autocmd WinLeave * set cursorline
+  autocmd!
+  autocmd WinLeave * set nocursorline
+  autocmd WinLeave * set cursorline
 augroup END
 
 augroup vimrc_c_vert_h
-    autocmd!
-    autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
+  autocmd!
+  autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
 augroup END
 
 " Persistence
 if has("persistent_undo")
-    set undodir=~/.vim/undo
-    set undofile
+  set undodir=~/.vim/undo
+  set undofile
 endif
 
 " Mappings
 nnoremap <Space> <nop>
 let mapleader=" "
 xnoremap <Leader>p "_dp
-nnoremap <Leader>htns :qa<CR>
+nnoremap <Leader>htn :q<CR>
+nnoremap <Leader>tns :wq<CR>
+nnoremap <Leader>ueo :qa<CR>
 nnoremap <Leader><Leader> :noh<CR>
 nnoremap <C-D> <C-D>zz
 nnoremap <C-U> <C-U>zz
