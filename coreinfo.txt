@@ -1,0 +1,2 @@
+info coreutils stty\ invocation
+grep -E "^#[[:alpha:]]{3}"

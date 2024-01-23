@@ -2,6 +2,8 @@
 #
 # TODO: Write file header
 
+readonly CSI=
+
 ########################################
 #(INSERT FUNCTION DESCRIPTON)
 #Globals:
