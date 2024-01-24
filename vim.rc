@@ -64,6 +64,10 @@ xnoremap <Leader>p "_dp
 nnoremap <Leader>htn :q<CR>
 nnoremap <Leader>tns :wq<CR>
 nnoremap <Leader>ueo :qa<CR>
+inoremap () ( )<ESC>%a 
+inoremap {} { }<ESC>%a 
+inoremap [] [ ]<ESC>%a 
+inoremap <> < ><ESC>%a 
 nnoremap <Leader><Leader> :noh<CR>
 nnoremap <C-D> <C-D>zz
 nnoremap <C-U> <C-U>zz
@@ -73,5 +77,4 @@ nnoremap n nzz
 nnoremap N Nzz
 nnoremap { {zz
 nnoremap } }zz
-
 set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r
