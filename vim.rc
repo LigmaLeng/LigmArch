@@ -37,6 +37,7 @@ set splitright
 set autowrite
 set cursorline
 set scrolloff=5
+set foldmethod=manual
 
 " AUTOCOMMAND 
 augroup vimrc_tg_cul
@@ -52,7 +53,7 @@ augroup END
 
 " Persistence
 if has("persistent_undo")
-  set undodir=~/.vim/undo
+  set undodir=~/.cache/vim/undo
   set undofile
 endif
 

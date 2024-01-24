@@ -2,7 +2,8 @@
 #
 # TODO: Write file header
 
-readonly CSI=
+readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
+declare -xr LIG_STTY_BAK="${LIG_CACHE_DIR}/stty_settings.bak}"
 
 ########################################
 #(INSERT FUNCTION DESCRIPTON)
@@ -22,7 +23,7 @@ readonly CSI=
 ########################################
 set_tty() {
   stty_bak=$( stty -g | tee stty.bak )
-  stty -icanon -nl -echo isig
+  stty -nl -echo -icanon -ixon isig 
 }
 
 redeem() {
@@ -136,17 +137,6 @@ dive() {
     esac
   done
 
-    ## Read single byte/char from stdin 
-    ## (expects special characters to be handled downstream)
-    #while read -sN1 char; do
-    #    # Filter first byte to convert ANSI control codes (if present)
-    #    #     od (output display) flags:
-    #    #         -i    display 16-bit words as signed decimal
-    #    #         -An   don't precede output line with input offset
-    #    #     tr (transform) flags:
-    #    #         -d    delete
-    #    sp=$(echo -n $char | od -i -An | tr -d " ")
-    #    
     #    # Control codes if interested
     #    # 127   (\0x7B)    Backspace
     #    # 8     (\0x08)    Alternative backspace
