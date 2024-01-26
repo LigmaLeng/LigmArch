@@ -167,7 +167,7 @@ dive() {
     #done
 }
 main() {
-  trap 'die "Interrupted"' SIGINT SIGHUP SIGTERM
+  trap 'die "Interrupted"' SIGINT SIGTERM
   #dive
 }
 main "$@"
