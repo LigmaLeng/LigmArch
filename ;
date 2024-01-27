@@ -1,0 +1,105 @@
+" FORMATTING
+set nocompatible
+set fileformat=unix
+set encoding=utf-8
+filetype on
+filetype plugin on
+syntax on
+" SPACING
+set shiftwidth=2
+set shiftround
+set autoindent
+set smartindent
+set tabstop=2
+set expandtab
+set smarttab
+set backspace=2
+
+
+" UI
+"
+"   Indicators
+set number
+set relativenumber
+set showmatch
+set matchpairs=(:),{:},[:],<:>
+set incsearch
+set hlsearch
+set ignorecase
+set smartcase
+set cursorline
+set scrolloff=5
+"   Drawing
+set lazyredraw
+set ttyfast
+"   Window
+set nowrap
+set splitkeep="screen"
+set splitright
+set winminheight=0
+set scrolloff=5
+set foldmethod=manual
+"   Gutter
+set laststatus=2
+set showcmd
+set showmode
+set wildmenu
+set wildmode=list:longest
+set shortmess=aost
+
+
+" PERSISTENCE
+set autowrite
+if has("persistent_undo")
+  set undodir=~/.cache/vim/undo
+  set undofile
+endif
+
+
+" AUTOCOMMAND 
+"
+"   Focus cursor
+augroup vimrc_tg_cul
+  autocmd!
+  autocmd WinLeave * set nocursorline
+  autocmd WinLeave * set cursorline
+augroup END
+"   Vertical split help window
+augroup vimrc_c_vert_h
+  autocmd!
+  autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
+augroup END
+
+" MAPPINGS
+"
+"   Leader
+nnoremap <Space> <nop>
+let mapleader=" "
+"   Navigation
+nnoremap <C-D> <C-D>zz
+nnoremap <C-U> <C-U>zz
+nnoremap o o<ESC>
+nnoremap O O<ESC>
+nnoremap n nzz
+nnoremap N Nzz
+nnoremap { {zz
+nnoremap } }zz
+"   Highlight
+nnoremap <Leader><Leader> :noh<CR>
+"   Quiting
+nnoremap <Leader>htn :q<CR>
+nnoremap <Leader>tns :wq<CR>
+nnoremap <Leader>ueo :qa<CR>
+"   Pasting
+xnoremap <Leader>p "_dp
+"   Autoclose
+inoremap () ()<LEFT>
+inoremap {} {}<LEFT>
+inoremap [] []<LEFT>
+inoremap (<LEADER> ( 
+inoremap {<LEADER> { 
+inoremap [<LEADER> [ 
+inoremap {<CR> {<CR><CR>}<UP><TAB>
+
+
+set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r

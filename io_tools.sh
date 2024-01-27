@@ -1,10 +1,12 @@
-#!/usr/bin/env/ bash
+#!/bin/bash
 #
 # TODO: Write file header
 
 readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
-declare -xr LIG_STTY_BAK="${LIG_CACHE_DIR}/stty_settings.bak}"
-
+readonly STTY_BAK=$( stty -g | tee stty.bak )
+declare -i LINES COLUMNS
+stty -nl -echo -icanon -ixon isig 
+trap 'die "Interrupted"' SIGINT SIGTERM
 ########################################
 #(INSERT FUNCTION DESCRIPTON)
 #Globals:
@@ -21,24 +23,33 @@ declare -xr LIG_STTY_BAK="${LIG_CACHE_DIR}/stty_settings.bak}"
 #  (DELETE INCLUDING DECLARATION IF NONE)
 #  eg: 0 if thing was deleted, non-zero on error
 ########################################
-set_tty() {
-  stty_bak=$( stty -g | tee stty.bak )
-  stty -nl -echo -icanon -ixon isig 
-}
-
-redeem() {
-  stty "$stty_bak"
-}
-
-die() {
-  # Resets screen and cursor
+cleanup_display() {
+  stty $STTY_BAK
   printf "\e[m\e[;r\e[2J\e[?25h"
+}
+
+calibrate_display() {
+  read -r LINES COLUMNS < <(stty size)
+  
+}
+
+part_display() {
+  # Quarter screen height
+  local qlen=LINES>>2 
+  # Vertically center cursor 
+  printf "\0x1B\0x9B%d;H"
+}
+
+prompt_exit() {
+  part_display
+}
+die() {
   # Output to stderr
   printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
+  cleanup_display
   exit 1
 }
 
-read -r LINES COLUMNS < <(stty size)
 declare -A _OPTS=(
 [keymap]="us"
 [partition_type]="linux-lvm"
@@ -167,7 +178,8 @@ dive() {
     #done
 }
 main() {
-  trap 'die "Interrupted"' SIGINT SIGTERM
+  set_tty
+  echo "${stty_bak}"
   #dive
 }
 main "$@"
