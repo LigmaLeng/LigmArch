@@ -93,9 +93,13 @@ nnoremap <Leader>ueo :qa<CR>
 "   Pasting
 xnoremap <Leader>p "_dp
 "   Autoclose
-inoremap ( ()<ESC>h
-inoremap { {}<ESC>h
-inoremap [ []<ESC>h
+inoremap () ()<LEFT>
+inoremap {} {}<LEFT>
+inoremap [] []<LEFT>
+inoremap (<LEADER> ( 
+inoremap {<LEADER> { 
+inoremap [<LEADER> [ 
+inoremap {<CR> {<CR><CR>}<UP><TAB>
 
 
 set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r
