@@ -2,11 +2,6 @@
 #
 # TODO: Write file header
 
-readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
-readonly STTY_BAK=$( stty -g | tee stty.bak )
-declare -i LINES COLUMNS
-stty -nl -echo -icanon -ixon isig 
-trap 'die "Interrupted"' SIGINT SIGTERM
 ########################################
 #(INSERT FUNCTION DESCRIPTON)
 #Globals:
@@ -23,33 +18,8 @@ trap 'die "Interrupted"' SIGINT SIGTERM
 #  (DELETE INCLUDING DECLARATION IF NONE)
 #  eg: 0 if thing was deleted, non-zero on error
 ########################################
-cleanup_display() {
-  stty $STTY_BAK
-  printf "\e[m\e[;r\e[2J\e[?25h"
-}
-
-calibrate_display() {
-  read -r LINES COLUMNS < <(stty size)
-  
-}
-
-part_display() {
-  # Quarter screen height
-  local qlen=LINES>>2 
-  # Vertically center cursor 
-  printf "\0x1B\0x9B%d;H"
-}
-
-prompt_exit() {
-  part_display
-}
-die() {
-  # Output to stderr
-  printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
-  cleanup_display
-  exit 1
-}
-
+#readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
+declare -i LINES COLUMNS
 declare -A _OPTS=(
 [keymap]="us"
 [partition_type]="linux-lvm"
@@ -62,51 +32,64 @@ declare -A _OPTS=(
 [userpass]=""
 )
 
-# Generate a positive random integer
-# from ranges 1 to arg1 (inclusive)
-#
-roll_d() {
-  printf "$(( ( RANDOM % $1 ) + 1 ))"
+trap 'die "Interrupted"' SIGINT SIGTERM
+
+get_size() {
+  read -r LINES COLUMNS < <(stty size)
 }
 
-unroll_idx() {
-  local i=$1
-  local j=$2
-  local ld=$3
-  printf "$(( j * ld + i ))"
+mod_stty() {
+  readonly STTY_BAK=$(stty -g)
+  stty -nl -echo -icanon -ixon isig 
 }
 
-#_CARD_BUF=( $(for (( i = 0; i <  ))) )
-TL="\u2554"	# Top-Left corner ╔
-TR="\u2557" 	# Top-Right corner ╗
-BL="\u255A" 	# Bottom-Left corner ╚
-BR="\u255D" 	# Bottom-Right corner ╝
-HB="\u2550" 	# Horizontal border ═
-VB="\u2551" 	# Vertical border ║
+reset_stty() {
+  stty $STTY_BAK
+}
 
-# Array of glyphs representing the gradient of
-# grayscale intensity in descending order
-# ▒░#≡*•○·
-GRAD=(
-  "\u2592"
-  "\u2591"
-  "#"
-  "\u2261"
-  "*"
-  "\u2022"
-  "\u25CB"
-  "\u00B7"
-)
+cleanup_display() {
+  printf "\e[m\e[;r\e[2J\e[?25h"
+}
 
+nap() {
+  local IFS # Reset IFS
+  [[ -n "${_nap_fd:-}" ]] || { exec {_nap_fd}<> <(:); } 2>/dev/null
+  read ${1:+-t "$1"} -u $_nap_fd || :
+}
 
+part_display() {
+  local -i lines_odd=$(( LINES & 1 ))
+  local -i lines_mid=$(( (LINES + 1) >> 1 ))
+  local -i cols_odd=$(( COLUMNS & 1 ))
+  local -i cols_mid=$(( (COLUMNS + 1) >> 1 ))
+  (($lines_odd)) && glyph="\xE2\x95\x90" \
+    || glyph="\xE2\x94\x80\x1B\x9BB\x1B\x9BD\xE2\x94\x80"
 
-# Function to repeat given string n number of times
-# Does not include newline escape
-#
-# Accepts 2 arguments
-# arg1:  n number of repeats (required)
-# arg2:  target string to repeat (optional; default = "-")
-#
+  for (( i = 0; i < cols_mid - 1; i++ )); do
+    printf "\x1B\x9B${lines_mid};$(( cols_mid - i))H${glyph}"
+    printf "\x1B\x9B${lines_mid};$(( cols_mid + i + !cols_odd))H${glyph}"
+    nap 0.003
+  done
+}
+
+prompt_exit() {
+  part_display
+}
+die() {
+  # Output to stderr
+  printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
+  cleanup_display
+  exit 1
+}
+
+#≡ = \xe2\x89\xa1
+#║ = \xe2\x95\x91
+#═ = \xe2\x95\x90
+#╝ = \xe2\x95\x9d
+#╚ = \xe2\x95\x9a
+#╗ = \xe2\x95\x97
+#╔ = \xe2\x95\x94
+
 repeat() {
   local tmpl="${2:--}"
   local str=""
@@ -114,25 +97,20 @@ repeat() {
   printf "$str"
 }
 
-
 draw_frame() {
   local canvas_w=$(( ${1:-COLUMNS} - 2 ))
   local canvas_h=$(( ${2:-LINES} - 2 ))
 
-  printf "\e[31m\u2554$( repeat $canvas_w "\u2550" )\u2557\n"
-  for (( i = 0; i < $canvas_h; i++ )); do
-    printf "\u2551$( repeat $canvas_w "\u0020" )\u2551\n"
+  printf "\x1B\x9B2J\x1B\x9B;H\x1B\x9B31m"
+  printf "\xE2\x95\x94$( repeat $canvas_w "\xE2\x95\x90" )\xE2\x95\x97\n"
+  for (( i = 2; i < LINES; i++ )); do
+    printf "\xE2\x95\x91\x1B\x9B${i};${COLUMNS}H\xE2\x95\x91\n"
   done
-  printf "\u255A$( repeat $canvas_w "\u2550" )\u255D\e[m\n\e[2;2H"
-
+  printf "\xe2\x95\x9a$( repeat $canvas_w "\xe2\x95\x90" )\xe2\x95\x9d"
+  printf "\x1b\x9b2;2H"
 }
 
 
-nap() {
-  local IFS # Reset IFS
-  [[ -n "${_nap_fd:-}" ]] || { exec {_nap_fd}<> <(:); } 2>/dev/null
-  read ${1:+-t "$1"} -u $_nap_fd || :
-}
 
 dive() {
   local char
@@ -178,8 +156,17 @@ dive() {
     #done
 }
 main() {
-  set_tty
-  echo "${stty_bak}"
-  #dive
+  mod_stty
+
+  trap 'get_size; draw_frame' SIGWINCH
+  get_size
+  #hide curs
+  printf "\x1B\x9B?25l"
+  draw_frame
+  part_display
+  nap 2
+  reset_stty
+#part_display
+#dive
 }
 main "$@"
