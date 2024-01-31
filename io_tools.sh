@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # TODO: Write file header
 
@@ -20,6 +20,7 @@
 ########################################
 #readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
 declare -i LINES COLUMNS
+
 declare -A _OPTS=(
 [keymap]="us"
 [partition_type]="linux-lvm"
@@ -32,11 +33,6 @@ declare -A _OPTS=(
 [userpass]=""
 )
 
-
-get_size() {
-  read -r LINES COLUMNS < <(stty size)
-}
-
 mod_stty() {
   readonly STTY_BAK=$(stty -g)
   stty -nl -echo -icanon -ixon -isig 
@@ -44,6 +40,10 @@ mod_stty() {
 
 reset_stty() {
   stty $STTY_BAK
+}
+
+get_size() {
+  read -r LINES COLUMNS < <(stty size)
 }
 
 win_init() {
@@ -125,15 +125,14 @@ dive() {
   local sp
   local str
 
-  while read -sN1 char; do
-    printf "\x1B\x9B2;2H"
-    jobs
-    nap 5
+  printf "\x1B\x9B2;2H"
+  while read -rsN1 char; do
     [[ $char == $'\x1B' ]] && die "esc"
     case $char in
       $'\x7F'|$'\x08') [ -z "$str" ] || str=${str:0:-1};;
       $'\n') echo "ent";;
-      ' ') echo "spaco";;
+      ' ') echo "sp";;
+      'q') die "q";;
     esac
   done
 
@@ -153,17 +152,16 @@ dive() {
     #        str=$str"$char"
     #    fi
     #    clear
-	  #  _draw_frame 160 44
     #    echo "Search: $str"
     #    grep -im 10 "$str" lc.txt
     #done
 }
 
 main() {
+  trap 'get_size; draw_frame' SIGWINCH SIGCONT
+  trap 'die "Interrupted"' INT TERM EXIT
   get_size
   mod_stty
-  trap 'get_size; draw_frame' SIGWINCH
-  trap 'die "Interrupted"' SIGINT SIGTERM
   draw_frame
   #printf "\x1B\x9B2;2H%s" "$(stty -a)"
   dive
