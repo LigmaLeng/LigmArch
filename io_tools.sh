@@ -32,7 +32,6 @@ declare -A _OPTS=(
 [userpass]=""
 )
 
-trap 'die "Interrupted"' SIGINT SIGTERM
 
 get_size() {
   read -r LINES COLUMNS < <(stty size)
@@ -40,11 +39,16 @@ get_size() {
 
 mod_stty() {
   readonly STTY_BAK=$(stty -g)
-  stty -nl -echo -icanon -ixon isig 
+  stty -nl -echo -icanon -ixon -isig 
 }
 
 reset_stty() {
   stty $STTY_BAK
+}
+
+win_init() {
+  # Hide cursor
+  printf "\x1B\x9B?25l"
 }
 
 cleanup_display() {
@@ -76,10 +80,11 @@ prompt_exit() {
   part_display
 }
 die() {
+  reset_stty
+  cleanup_display
   # Output to stderr
   printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
-  cleanup_display
-  exit 1
+  exit 0
 }
 
 #≡ = \xe2\x89\xa1
@@ -98,16 +103,19 @@ repeat() {
 }
 
 draw_frame() {
-  local canvas_w=$(( ${1:-COLUMNS} - 2 ))
-  local canvas_h=$(( ${2:-LINES} - 2 ))
+  local -i i=${1:-1}
+  local -i j=${2:-1}
+  local -i m=${3:-$LINES}
+  local -i n=${4:-$COLUMNS}
+  local horz=$(repeat $((n-2)) "\xE2\x95\x90")
+  local vert="\xE2\x95\x91\x1B\x9B$((n-2))C\xE2\x95\x91"
 
-  printf "\x1B\x9B2J\x1B\x9B;H\x1B\x9B31m"
-  printf "\xE2\x95\x94$( repeat $canvas_w "\xE2\x95\x90" )\xE2\x95\x97\n"
-  for (( i = 2; i < LINES; i++ )); do
-    printf "\xE2\x95\x91\x1B\x9B${i};${COLUMNS}H\xE2\x95\x91\n"
+  printf "\x1B\x9B%s" 2J 31m '?7l'
+  printf "\x1B\x9B${i};${j}H\xE2\x95\x94${horz}\xE2\x95\x97"
+  printf "\x1B\x9B$((i+m-1));${j}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
+  for (( offset = 1; offset < m-1; offset++ )); do
+    printf "\x1B\x9B$((i+offset));${j}H${vert}"
   done
-  printf "\xe2\x95\x9a$( repeat $canvas_w "\xe2\x95\x90" )\xe2\x95\x9d"
-  printf "\x1b\x9b2;2H"
 }
 
 
@@ -118,22 +126,17 @@ dive() {
   local str
 
   while read -sN1 char; do
-    ((0x1B == char)) && echo "esc"
+    printf "\x1B\x9B2;2H"
+    jobs
+    nap 5
+    [[ $char == $'\x1B' ]] && die "esc"
     case $char in
-      $'\x7F'|$'\x08') [ -z "$str" ] && str=${str:0:-1};;
+      $'\x7F'|$'\x08') [ -z "$str" ] || str=${str:0:-1};;
       $'\n') echo "ent";;
       ' ') echo "spaco";;
     esac
   done
 
-    #    # Control codes if interested
-    #    # 127   (\0x7B)    Backspace
-    #    # 8     (\0x08)    Alternative backspace
-    #    # 27    (\0x33)    ESC
-    #    if [[ $sp == 127 || $sp == 8 && ${#str} > 0 ]]; then
-    #        str=${str:0:-1} # Strip last char
-    #    elif [[ "$sp" = "27" ]]; then
-    #        # Because ESC is read in one byte
     #        # Detecting control sequence indicators ('[' + sequence)
     #        # is broken down into multiple steps
     #        read -sn1 sp
@@ -155,18 +158,16 @@ dive() {
     #    grep -im 10 "$str" lc.txt
     #done
 }
-main() {
-  mod_stty
 
-  trap 'get_size; draw_frame' SIGWINCH
+main() {
   get_size
-  #hide curs
-  printf "\x1B\x9B?25l"
+  mod_stty
+  trap 'get_size; draw_frame' SIGWINCH
+  trap 'die "Interrupted"' SIGINT SIGTERM
   draw_frame
-  part_display
-  nap 2
+  #printf "\x1B\x9B2;2H%s" "$(stty -a)"
+  dive
   reset_stty
-#part_display
-#dive
+  exit 0
 }
 main "$@"
