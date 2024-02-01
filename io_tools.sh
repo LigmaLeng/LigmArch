@@ -145,6 +145,8 @@ dive() {
       $'\n') echo "ent";;
       ' ') echo "sp";;
       'q') die "q";;
+      'j') die "q";;
+      'k') die "q";;
     esac
   done
 
