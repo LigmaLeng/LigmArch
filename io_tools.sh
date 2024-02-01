@@ -2,6 +2,8 @@
 #
 # TODO: Write file header
 
+#≡ = \xe2\x89\xa1
+
 ########################################
 #(INSERT FUNCTION DESCRIPTON)
 #Globals:
@@ -47,12 +49,20 @@ get_size() {
 }
 
 win_init() {
-  # Hide cursor
-  printf "\x1B\x9B?25l"
+  # 2J    Clear screen
+  # 31m   Foreground red
+  # ?25l  Hide cursor
+  # ?7l   Disable line wrapping
+  printf "\x1B\x9B%s" 2J 31m ?25l ?7l
 }
 
 cleanup_display() {
-  printf "\e[m\e[;r\e[2J\e[?25h"
+  # 2J    Clear screen
+  # m     Reset Colours 
+  # ?25h  Show cursor
+  # ?7h   Disable line wrapping
+  # r     Reset scrolling region
+  printf "\x1B\x9B%s" 2J m ?25h ?7h r 
 }
 
 nap() {
@@ -63,17 +73,26 @@ nap() {
 
 part_display() {
   local -i lines_odd=$(( LINES & 1 ))
-  local -i lines_mid=$(( (LINES + 1) >> 1 ))
   local -i cols_odd=$(( COLUMNS & 1 ))
+  local -i lines_mid=$(( (LINES + 1) >> 1 ))
   local -i cols_mid=$(( (COLUMNS + 1) >> 1 ))
-  (($lines_odd)) && glyph="\xE2\x95\x90" \
-    || glyph="\xE2\x94\x80\x1B\x9BB\x1B\x9BD\xE2\x94\x80"
+
+  t_top="\xE2\x95\xa8" 
+  t_bot="\xE2\x95\xa5" 
+  (($lines_odd)) && {
+    glyph="\xE2\x95\x90"
+  } || {
+    glyph="\xE2\x94\x80\x1B\x9BB\x1B\x9BD\xE2\x94\x80"
+  }
 
   for (( i = 0; i < cols_mid - 1; i++ )); do
     printf "\x1B\x9B${lines_mid};$(( cols_mid - i))H${glyph}"
     printf "\x1B\x9B${lines_mid};$(( cols_mid + i + !cols_odd))H${glyph}"
     nap 0.003
   done
+
+  printf "\x1B\x9B%s%b" "${lines_mid};H" ${t_top} "${COLUMNS}G" ${t_top}
+  printf "\x1B\x9B%s%b" "$((lines_mid+1+li));H" ${t_bot} "${COLUMNS}G" ${t_bot}
 }
 
 prompt_exit() {
@@ -86,14 +105,6 @@ die() {
   printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
   exit 0
 }
-
-#≡ = \xe2\x89\xa1
-#║ = \xe2\x95\x91
-#═ = \xe2\x95\x90
-#╝ = \xe2\x95\x9d
-#╚ = \xe2\x95\x9a
-#╗ = \xe2\x95\x97
-#╔ = \xe2\x95\x94
 
 repeat() {
   local tmpl="${2:--}"
@@ -110,7 +121,6 @@ draw_frame() {
   local horz=$(repeat $((n-2)) "\xE2\x95\x90")
   local vert="\xE2\x95\x91\x1B\x9B$((n-2))C\xE2\x95\x91"
 
-  printf "\x1B\x9B%s" 2J 31m '?7l'
   printf "\x1B\x9B${i};${j}H\xE2\x95\x94${horz}\xE2\x95\x97"
   printf "\x1B\x9B$((i+m-1));${j}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
   for (( offset = 1; offset < m-1; offset++ )); do
@@ -127,7 +137,9 @@ dive() {
 
   printf "\x1B\x9B2;2H"
   while read -rsN1 char; do
-    [[ $char == $'\x1B' ]] && die "esc"
+    [[ $char == $'\x1B' ]] && {
+      die "esc" 
+    }
     case $char in
       $'\x7F'|$'\x08') [ -z "$str" ] || str=${str:0:-1};;
       $'\n') echo "ent";;
@@ -162,9 +174,13 @@ main() {
   trap 'die "Interrupted"' INT TERM EXIT
   get_size
   mod_stty
+  win_init
+  LINES=44
   draw_frame
   #printf "\x1B\x9B2;2H%s" "$(stty -a)"
-  dive
+  #dive
+  part_display
+  nap 1
   reset_stty
   exit 0
 }
