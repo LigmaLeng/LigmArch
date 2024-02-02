@@ -59,15 +59,22 @@ endif
 " AUTOCOMMAND 
 "
 "   Focus cursor
-augroup vimrc_tg_cul
+augroup ligrc_toggle_CursorLine
   autocmd!
   autocmd WinLeave * set nocursorline
   autocmd WinLeave * set cursorline
 augroup END
 "   Vertical split help window
-augroup vimrc_c_vert_h
+augroup ligrc_split_help_vert
   autocmd!
   autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
+augroup END
+
+"   Save & Restore manual folds on exit
+augroup ligrc_fold_persistence
+  autocmd!
+  au BufWinLeave, BufLeave ?* silent! mkview
+  au BufWinEnter           ?* silent! loadview
 augroup END
 
 " MAPPINGS
@@ -96,9 +103,9 @@ xnoremap <Leader>p "_dp
 inoremap () ()<LEFT>
 inoremap {} {}<LEFT>
 inoremap [] []<LEFT>
-inoremap (<LEADER> ( 
-inoremap {<LEADER> { 
-inoremap [<LEADER> [ 
+inoremap (<LEADER> () 
+inoremap {<LEADER> {} 
+inoremap [<LEADER> [] 
 inoremap {<CR> {<CR><CR>}<UP><TAB>
 
 

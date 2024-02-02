@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 #
 # TODO: Write file header
-
-#≡ = \xe2\x89\xa1
-
 ########################################
 #(INSERT FUNCTION DESCRIPTON)
 #Globals:
@@ -20,7 +17,8 @@
 #  (DELETE INCLUDING DECLARATION IF NONE)
 #  eg: 0 if thing was deleted, non-zero on error
 ########################################
-#readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
+
+readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
 declare -i LINES COLUMNS
 
 declare -A _OPTS=(
@@ -40,10 +38,6 @@ mod_stty() {
   stty -nl -echo -icanon -ixon -isig 
 }
 
-reset_stty() {
-  stty $STTY_BAK
-}
-
 get_size() {
   read -r LINES COLUMNS < <(stty size)
 }
@@ -56,14 +50,18 @@ win_init() {
   printf "\x1B\x9B%s" 2J 31m ?25l ?7l
 }
 
-cleanup_display() {
+cleanup() {
   # 2J    Clear screen
   # m     Reset Colours 
   # ?25h  Show cursor
   # ?7h   Disable line wrapping
   # r     Reset scrolling region
   printf "\x1B\x9B%s" 2J m ?25h ?7h r 
+  # Reset stty
+  stty $STTY_BAK
 }
+
+repeat()for((;rep++<$2;)){ printf "$1";}
 
 nap() {
   local IFS # Reset IFS
@@ -95,22 +93,10 @@ part_display() {
   printf "\x1B\x9B%s%b" "$((lines_mid+1+li));H" ${t_bot} "${COLUMNS}G" ${t_bot}
 }
 
-prompt_exit() {
-  part_display
-}
 die() {
-  reset_stty
-  cleanup_display
+  cleanup
   # Output to stderr
   printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
-  exit 0
-}
-
-repeat() {
-  local tmpl="${2:--}"
-  local str=""
-  for (( i = 0; i < $1 ; i++ )); do str+=$tmpl; done
-  printf "$str"
 }
 
 draw_frame() {
@@ -118,17 +104,15 @@ draw_frame() {
   local -i j=${2:-1}
   local -i m=${3:-$LINES}
   local -i n=${4:-$COLUMNS}
-  local horz=$(repeat $((n-2)) "\xE2\x95\x90")
+  local horz=$(repeat "\xE2\x95\x90" $((n - 2)))
   local vert="\xE2\x95\x91\x1B\x9B$((n-2))C\xE2\x95\x91"
-
+  #       Cursor origin           ╔           ═           ╗
   printf "\x1B\x9B${i};${j}H\xE2\x95\x94${horz}\xE2\x95\x97"
+  # Every line but first and last ║                       ║
+  for((;offset++<m-2;)){ printf "\x1B\x9B$((i+offset));${j}H${vert}";}
+  #       origin + 1 down         ╚           ═           ╝
   printf "\x1B\x9B$((i+m-1));${j}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
-  for (( offset = 1; offset < m-1; offset++ )); do
-    printf "\x1B\x9B$((i+offset));${j}H${vert}"
-  done
 }
-
-
 
 dive() {
   local char
@@ -173,17 +157,16 @@ dive() {
 
 main() {
   trap 'get_size; draw_frame' SIGWINCH SIGCONT
-  trap 'die "Interrupted"' INT TERM EXIT
+  trap 'die "Interrupted"' SIGINT EXIT
   get_size
   mod_stty
   win_init
-  LINES=44
   draw_frame
-  #printf "\x1B\x9B2;2H%s" "$(stty -a)"
   #dive
-  part_display
-  nap 1
-  reset_stty
+  #part_display
+  nap 2
   exit 0
 }
 main "$@"
+#╗╝╚╔═║
+#≡ = \xe2\x89\xa1
