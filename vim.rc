@@ -69,13 +69,13 @@ augroup ligrc_split_help_vert
   autocmd!
   autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
 augroup END
-
 "   Save & Restore manual folds on exit
 augroup ligrc_fold_persistence
   autocmd!
-  au BufWinLeave, BufLeave ?* silent! mkview
-  au BufWinEnter           ?* silent! loadview
+  autocmd BufWinLeave * mkview
+  autocmd BufWinEnter * silent! loadview
 augroup END
+
 
 " MAPPINGS
 "
