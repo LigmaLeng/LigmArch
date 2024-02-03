@@ -18,8 +18,8 @@
 #  eg: 0 if thing was deleted, non-zero on error
 ########################################
 
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL LIG_DBUG
 readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
-declare -i LINES COLUMNS
 
 declare -A _OPTS=(
 [keymap]="us"
@@ -39,7 +39,10 @@ mod_stty() {
 }
 
 get_size() {
+  #[[ -n $1 ]] && LINES=$1 && [[ -n $2 ]] && COLUMNS=$2
   read -r LINES COLUMNS < <(stty size)
+  TRANSVERSE=$(((LINES+1)>>1))
+  SAGITTAL=$(((COLUMNS+1)>>1))
 }
 
 win_init() {
@@ -69,28 +72,25 @@ nap() {
   read ${1:+-t "$1"} -u $_nap_fd || :
 }
 
+_dbug_alignment() {
+    printf "\x1B\x9B%s;%sH\xE2\x94\xAC %s" $((TRANSVERSE-2)) ${SAGITTAL} $((TRANSVERSE-2))
+    printf "\x1B\x9B%s;H\xE2\x95\x9F %s" $((TRANSVERSE-1)) $((TRANSVERSE-1)) 
+    printf "\x1B\x9B%sG\xE2\x94\x9C %s" ${SAGITTAL} ${SAGITTAL}
+}
+
 part_display() {
   local -i lines_odd=$(( LINES & 1 ))
   local -i cols_odd=$(( COLUMNS & 1 ))
-  local -i lines_mid=$(( (LINES + 1) >> 1 ))
-  local -i cols_mid=$(( (COLUMNS + 1) >> 1 ))
-
   t_top="\xE2\x95\xa8" 
   t_bot="\xE2\x95\xa5" 
-  (($lines_odd)) && {
-    glyph="\xE2\x95\x90"
-  } || {
-    glyph="\xE2\x94\x80\x1B\x9BB\x1B\x9BD\xE2\x94\x80"
-  }
-
-  for (( i = 0; i < cols_mid - 1; i++ )); do
-    printf "\x1B\x9B${lines_mid};$(( cols_mid - i))H${glyph}"
-    printf "\x1B\x9B${lines_mid};$(( cols_mid + i + !cols_odd))H${glyph}"
-    nap 0.003
+  #((lines_odd))
+  for (( i = 0; i < SAGITTAL - 1; i++ )); do
+    printf "\x1B\x9B${TRANSVERSE};$(( SAGITTAL - i))H\xE2\x94\x80"
+    printf "\x1B\x9B${TRANSVERSE};$(( SAGITTAL + i + !cols_odd))H\xE2\x94\x80"
+    ((i<3)) && nap 2 || nap 0.003
   done
-
-  printf "\x1B\x9B%s%b" "${lines_mid};H" ${t_top} "${COLUMNS}G" ${t_top}
-  printf "\x1B\x9B%s%b" "$((lines_mid+1+li));H" ${t_bot} "${COLUMNS}G" ${t_bot}
+  printf "\x1B\x9B%s%b" "${TRANSVERSE};H" ${t_top} "${COLUMNS}G" ${t_top}
+  printf "\x1B\x9B%s%b" "$((TRANSVERSE+1+li));H" ${t_bot} "${COLUMNS}G" ${t_bot}
 }
 
 die() {
@@ -158,15 +158,16 @@ dive() {
 main() {
   trap 'get_size; draw_frame' SIGWINCH SIGCONT
   trap 'die "Interrupted"' SIGINT EXIT
+  [[ $1 == -d ]] && LIG_DBUG=1 || LIG_DBUG=0
+  ((LIG_DBUG)) && echo "dbug" || echo "ndbug"
+  exit 0
   get_size
   mod_stty
   win_init
   draw_frame
   #dive
-  #part_display
-  nap 2
+  part_display
+  nap 1
   exit 0
 }
 main "$@"
-#╗╝╚╔═║
-#≡ = \xe2\x89\xa1
