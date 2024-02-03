@@ -38,9 +38,34 @@ mod_stty() {
   stty -nl -echo -icanon -ixon -isig 
 }
 
+cleanup() {
+  # 2J    Clear screen
+  # m     Reset Colours 
+  # ?25h  Show cursor
+  # ?7h   Disable line wrapping
+  # r     Reset scrolling region
+  printf "\x1B\x9B%s" 2J m ?25h ?7h r 
+  # Reset stty if modified
+  [[ -n "$STTY_BAK" ]] && stty $STTY_BAK || echo "stty unset"
+  nap 1
+}
+
+die() {
+  cleanup
+  # Output to stderr
+  printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} "${1-Died}" >&2
+  nap 3
+}
+
 get_size() {
+  ((LIG_DBUG)) || {
+    read -r LINES COLUMNS < <(stty size)
+  } && ((LIG_DBUG&2)) && {
+    ((LIG_DBUG<<=1))
+    read -rp "Specify {LINES} {COLUMNS}: " LINES COLUMNS
+    !((LINES)) || !((COLUMNS)) && die 'Parse Error'
+  }
   #[[ -n $1 ]] && LINES=$1 && [[ -n $2 ]] && COLUMNS=$2
-  read -r LINES COLUMNS < <(stty size)
   TRANSVERSE=$(((LINES+1)>>1))
   SAGITTAL=$(((COLUMNS+1)>>1))
 }
@@ -51,17 +76,6 @@ win_init() {
   # ?25l  Hide cursor
   # ?7l   Disable line wrapping
   printf "\x1B\x9B%s" 2J 31m ?25l ?7l
-}
-
-cleanup() {
-  # 2J    Clear screen
-  # m     Reset Colours 
-  # ?25h  Show cursor
-  # ?7h   Disable line wrapping
-  # r     Reset scrolling region
-  printf "\x1B\x9B%s" 2J m ?25h ?7h r 
-  # Reset stty
-  stty $STTY_BAK
 }
 
 repeat()for((;rep++<$2;)){ printf "$1";}
@@ -91,12 +105,6 @@ part_display() {
   done
   printf "\x1B\x9B%s%b" "${TRANSVERSE};H" ${t_top} "${COLUMNS}G" ${t_top}
   printf "\x1B\x9B%s%b" "$((TRANSVERSE+1+li));H" ${t_bot} "${COLUMNS}G" ${t_bot}
-}
-
-die() {
-  cleanup
-  # Output to stderr
-  printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} ${1-Died} >&2
 }
 
 draw_frame() {
@@ -159,10 +167,11 @@ main() {
   trap 'get_size; draw_frame' SIGWINCH SIGCONT
   trap 'die "Interrupted"' SIGINT EXIT
   [[ $1 == -d ]] && LIG_DBUG=1 || LIG_DBUG=0
-  ((LIG_DBUG)) && echo "dbug" || echo "ndbug"
-  exit 0
-  get_size
   mod_stty
+  get_size
+  echo $LINES $COLUMNS
+  nap 3
+  exit 0
   win_init
   draw_frame
   #dive
