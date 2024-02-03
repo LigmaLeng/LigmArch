@@ -18,7 +18,7 @@
 #  eg: 0 if thing was deleted, non-zero on error
 ########################################
 
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL LIG_DBUG
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL WIN_DBUG
 readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
 
 declare -A _OPTS=(
@@ -46,26 +46,25 @@ cleanup() {
   # r     Reset scrolling region
   printf "\x1B\x9B%s" 2J m ?25h ?7h r 
   # Reset stty if modified
-  [[ -n "$STTY_BAK" ]] && stty $STTY_BAK || echo "stty unset"
-  nap 1
+  [[ -n "$STTY_BAK" ]] && stty $STTY_BAK
 }
 
 die() {
-  cleanup
   # Output to stderr
-  printf "%s: line %d: %s: %s.\n" ${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]} "${1-Died}" >&2
-  nap 3
+  local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
+  printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
+  printf "press any key to continue"
+  read -rsN1
+  exit 0
+}
+
+win_dbug() {
+  WIN_DBUG=1 && LINES=$1 && COLUMNS=$2
+  !((LINES)) || !((COLUMNS)) && die 'Parse Error'
 }
 
 get_size() {
-  ((LIG_DBUG)) || {
-    read -r LINES COLUMNS < <(stty size)
-  } && ((LIG_DBUG&2)) && {
-    ((LIG_DBUG<<=1))
-    read -rp "Specify {LINES} {COLUMNS}: " LINES COLUMNS
-    !((LINES)) || !((COLUMNS)) && die 'Parse Error'
-  }
-  #[[ -n $1 ]] && LINES=$1 && [[ -n $2 ]] && COLUMNS=$2
+  ((WIN_DBUG)) || { read -r LINES COLUMNS < <(stty size);}
   TRANSVERSE=$(((LINES+1)>>1))
   SAGITTAL=$(((COLUMNS+1)>>1))
 }
@@ -164,13 +163,13 @@ dive() {
 }
 
 main() {
+  trap 'cleanup' EXIT
   trap 'get_size; draw_frame' SIGWINCH SIGCONT
-  trap 'die "Interrupted"' SIGINT EXIT
-  [[ $1 == -d ]] && LIG_DBUG=1 || LIG_DBUG=0
+  trap 'die "Interrupted"' SIGINT
   mod_stty
+  [[ $1 == -d ]] || WIN_DBUG=0 && win_dbug $2 $3
   get_size
-  echo $LINES $COLUMNS
-  nap 3
+  echo $LINES $COLUMNS && nap 3
   exit 0
   win_init
   draw_frame
