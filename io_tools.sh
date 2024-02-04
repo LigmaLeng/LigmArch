@@ -18,7 +18,7 @@
 #  eg: 0 if thing was deleted, non-zero on error
 ########################################
 
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL WIN_DBUG
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
 
 declare -A _OPTS=(
@@ -58,15 +58,29 @@ die() {
   exit 0
 }
 
-win_dbug() {
-  WIN_DBUG=1 && LINES=$1 && COLUMNS=$2
-  !((LINES)) || !((COLUMNS)) && die 'Parse Error'
-}
-
 get_size() {
-  ((WIN_DBUG)) || { read -r LINES COLUMNS < <(stty size);}
+  ((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
   TRANSVERSE=$(((LINES+1)>>1))
   SAGITTAL=$(((COLUMNS+1)>>1))
+}
+
+test_prompt() {
+  # Temp vars as invoking stty overrides values for LINES and COLUMNS
+  local -a dim
+  OPT_TEST=1
+  read -rap "Enter display size in {LINES} {COLUMNS} (ex: 25 80): " dim
+  mod_stty
+  (( ${#dim[@]})) && return 0
+  !(( ${dim[]})) || !((dim_y)) && die 'Parse Error'
+  LINES=$dim_x
+  COLUMNS=$dim_y
+  return 0
+}
+
+test_ruler() {
+    printf "\x1B\x9B%s;%sH\xE2\x94\xAC %s" $((TRANSVERSE-2)) ${SAGITTAL} $((TRANSVERSE-2))
+    printf "\x1B\x9B%s;H\xE2\x95\x9F %s" $((TRANSVERSE-1)) $((TRANSVERSE-1)) 
+    printf "\x1B\x9B%sG\xE2\x94\x9C %s" ${SAGITTAL} ${SAGITTAL}
 }
 
 win_init() {
@@ -85,25 +99,22 @@ nap() {
   read ${1:+-t "$1"} -u $_nap_fd || :
 }
 
-_dbug_alignment() {
-    printf "\x1B\x9B%s;%sH\xE2\x94\xAC %s" $((TRANSVERSE-2)) ${SAGITTAL} $((TRANSVERSE-2))
-    printf "\x1B\x9B%s;H\xE2\x95\x9F %s" $((TRANSVERSE-1)) $((TRANSVERSE-1)) 
-    printf "\x1B\x9B%sG\xE2\x94\x9C %s" ${SAGITTAL} ${SAGITTAL}
-}
-
 part_display() {
   local -i lines_odd=$(( LINES & 1 ))
   local -i cols_odd=$(( COLUMNS & 1 ))
-  t_top="\xE2\x95\xa8" 
-  t_bot="\xE2\x95\xa5" 
-  #((lines_odd))
+  local fissure=$(repeat "\xE2\x94\x80" $((COLUMNS-2)))
+  t_top="\xE2\x95\xa8"
+  t_bot="\xE2\x95\xa5"
+  ((OPT_TEST)) && test_ruler
+  # Grow fissure from from saggital plane laterally along transverse plane
   for (( i = 0; i < SAGITTAL - 1; i++ )); do
     printf "\x1B\x9B${TRANSVERSE};$(( SAGITTAL - i))H\xE2\x94\x80"
     printf "\x1B\x9B${TRANSVERSE};$(( SAGITTAL + i + !cols_odd))H\xE2\x94\x80"
-    ((i<3)) && nap 2 || nap 0.003
+    ((OPT_TEST)) && ((i<3)) && nap 2
+    nap 0.003
   done
   printf "\x1B\x9B%s%b" "${TRANSVERSE};H" ${t_top} "${COLUMNS}G" ${t_top}
-  printf "\x1B\x9B%s%b" "$((TRANSVERSE+1+li));H" ${t_bot} "${COLUMNS}G" ${t_bot}
+  printf "\x1B\x9B%s%b" "$((TRANSVERSE+1));H" ${t_bot} "${COLUMNS}G" ${t_bot}
 }
 
 draw_frame() {
@@ -166,11 +177,8 @@ main() {
   trap 'cleanup' EXIT
   trap 'get_size; draw_frame' SIGWINCH SIGCONT
   trap 'die "Interrupted"' SIGINT
-  mod_stty
-  [[ $1 == -d ]] || WIN_DBUG=0 && win_dbug $2 $3
+  [[ $1 == -t ]] && test_prompt || mod_stty
   get_size
-  echo $LINES $COLUMNS && nap 3
-  exit 0
   win_init
   draw_frame
   #dive
