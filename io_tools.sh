@@ -88,7 +88,7 @@ win_init() {
   # 31m   Foreground red
   # ?25l  Hide cursor
   # ?7l   Disable line wrapping
-  printf "\x1B\x9B%s" 2J 31m ?25l ?7l
+  printf "\x1B\x9B%s" 2J 31m ?25l ?7l "2;$((LINES-1))r"
 }
 
 echoes()for((i=0;i++<$2;)){ printf "$1";}
@@ -106,15 +106,15 @@ part_display() {
   printf "\x1B\x9B${TRANSVERSE};H\x1B7"
   # Grow fissure from from saggital plane laterally along transverse plane
   for (( i = 0; i < SAGITTAL - 1; i++ )); do
-    printf "\x1B\x9B$(( SAGITTAL - i))G\xE2\x94\x80"
-    printf "\x1B\x9B$(( SAGITTAL + i + !(COLUMNS&1) ))G\xE2\x94\x80"
-    nap 0.003
+    printf "\x1B\x9B$(( SAGITTAL - i))G\xE2\x95\x90"
+    printf "\x1B\x9B$(( SAGITTAL + i + !(COLUMNS&1) ))G\xE2\x95\x90"
+    nap 0.004
   done
-  # Ligate chars using saved cursor state and relative motion
-  echoes "\xE2\x95\xA8\x1B8" 2
-  printf "\x1BD\xE2\x95\xA5${fissure}\xE2\x95\xA5"
-  #printf "\xE2\x95\xA5\x1B\x9B${COLUMNS}G\xE2\x95\xA5"
-  nap 3
+  # Ligate fissure
+  echoes "\xE2\x95\xAC\x1B8" 2 && nap 1
+  printf "\x1B\x9B$(( 2-(LINES&1) ))%s" M L
+  #echoes "\xE2\x95\xA8\x1B8" 2 && printf "%b\xE2\x95\xA5" "\x1BD" $fissure
+  nap 2
 }
 
 draw_frame() {
