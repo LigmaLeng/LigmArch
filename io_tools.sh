@@ -77,12 +77,6 @@ test_prompt() {
   return 0
 }
 
-test_ruler() {
-    printf "\x1B\x9B%s;%sH\xE2\x94\xAC %s" $((TRANSVERSE-2)) ${SAGITTAL} $((TRANSVERSE-2))
-    printf "\x1B\x9B%s;H\xE2\x95\x9F %s" $((TRANSVERSE-1)) $((TRANSVERSE-1)) 
-    printf "\x1B\x9B%sG\xE2\x94\x9C %s" ${SAGITTAL} ${SAGITTAL}
-}
-
 win_init() {
   # 2J    Clear screen
   # 31m   Foreground red
@@ -99,22 +93,29 @@ nap() {
   read ${1:+-t "$1"} -u $_nap_fd || :
 }
 
-part_display() {
+cleave_display() {
   local fissure=$(echoes "\xE2\x94\x80" $((COLUMNS-2)))
-  ((OPT_TEST)) && test_ruler
   # Cursor on transverse plane and save cursor state
   printf "\x1B\x9B${TRANSVERSE};H\x1B7"
   # Grow fissure from from saggital plane laterally along transverse plane
-  for (( i = 0; i < SAGITTAL - 1; i++ )); do
+  for (( i=0; i < SAGITTAL-1; i++ )); do
     printf "\x1B\x9B$(( SAGITTAL - i))G\xE2\x95\x90"
     printf "\x1B\x9B$(( SAGITTAL + i + !(COLUMNS&1) ))G\xE2\x95\x90"
     nap 0.004
   done
   # Ligate fissure
-  echoes "\xE2\x95\xAC\x1B8" 2 && nap 1
-  printf "\x1B\x9B$(( 2-(LINES&1) ))%s" M L
-  #echoes "\xE2\x95\xA8\x1B8" 2 && printf "%b\xE2\x95\xA5" "\x1BD" $fissure
-  nap 2
+  echoes "\xE2\x95\xAC\x1B8" 2 && nap 0.1
+  # Pilot cleavage and swap ligatures
+  printf "\xE2\x95\xA8%b" $fissure "\n"
+  printf "\xE2\x95\xA5%b" $fissure "\x1B8"
+  # Widen pilot cleave if lines are odd
+  # A M B L: up  delete_line  down  insert_line
+  ((LINES&1)) && printf "\x1B\x9B%s" A M B L A
+  # Continue widening
+  for (( i=0; i < (TRANSVERSE>>2)-(LINES&1); i++ )); do
+    printf "\x1B\x9B%s" A M B 2L A
+    nap 0.015
+  done
 }
 
 draw_frame() {
@@ -182,7 +183,7 @@ main() {
   win_init
   draw_frame
   #dive
-  part_display
+  cleave_display
   nap 1
   exit 0
 }
