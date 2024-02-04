@@ -64,16 +64,16 @@ augroup ligrc_toggle_CursorLine
   autocmd WinLeave * set nocursorline
   autocmd WinLeave * set cursorline
 augroup END
-"   Vertical split help window
-augroup ligrc_split_help_vert
-  autocmd!
-  autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
-augroup END
-"   Save & Restore manual folds on exit
+"   Save and restore manual folds on exit
 augroup ligrc_fold_persistence
   autocmd!
   autocmd BufWinLeave * mkview
   autocmd BufWinEnter * silent! loadview
+augroup END
+"   Vertical split help window
+augroup ligrc_split_help_vert
+  autocmd!
+  autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
 augroup END
 
 

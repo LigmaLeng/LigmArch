@@ -68,12 +68,12 @@ test_prompt() {
   # Temp vars as invoking stty overrides values for LINES and COLUMNS
   local -a dim
   OPT_TEST=1
-  read -rap "Enter display size in {LINES} {COLUMNS} (ex: 25 80): " dim
+  read -ra dim -p "Enter display size in {LINES} {COLUMNS} (ex: 25 80): "
   mod_stty
-  (( ${#dim[@]})) && return 0
-  !(( ${dim[]})) || !((dim_y)) && die 'Parse Error'
-  LINES=$dim_x
-  COLUMNS=$dim_y
+  (( ${#dim[@]} )) || return 0
+  !(( ${dim[0]} )) || !(( ${dim[1]} )) && die 'Parse Error'
+  LINES=${dim[0]}
+  COLUMNS=${dim[1]}
   return 0
 }
 
@@ -91,7 +91,7 @@ win_init() {
   printf "\x1B\x9B%s" 2J 31m ?25l ?7l
 }
 
-repeat()for((;rep++<$2;)){ printf "$1";}
+echoes()for((i=0;i++<$2;)){ printf "$1";}
 
 nap() {
   local IFS # Reset IFS
@@ -100,36 +100,36 @@ nap() {
 }
 
 part_display() {
-  local -i lines_odd=$(( LINES & 1 ))
-  local -i cols_odd=$(( COLUMNS & 1 ))
-  local fissure=$(repeat "\xE2\x94\x80" $((COLUMNS-2)))
-  t_top="\xE2\x95\xa8"
-  t_bot="\xE2\x95\xa5"
+  local fissure=$(echoes "\xE2\x94\x80" $((COLUMNS-2)))
   ((OPT_TEST)) && test_ruler
+  # Cursor on transverse plane and save cursor state
+  printf "\x1B\x9B${TRANSVERSE};H\x1B7"
   # Grow fissure from from saggital plane laterally along transverse plane
   for (( i = 0; i < SAGITTAL - 1; i++ )); do
-    printf "\x1B\x9B${TRANSVERSE};$(( SAGITTAL - i))H\xE2\x94\x80"
-    printf "\x1B\x9B${TRANSVERSE};$(( SAGITTAL + i + !cols_odd))H\xE2\x94\x80"
-    ((OPT_TEST)) && ((i<3)) && nap 2
+    printf "\x1B\x9B$(( SAGITTAL - i))G\xE2\x94\x80"
+    printf "\x1B\x9B$(( SAGITTAL + i + !(COLUMNS&1) ))G\xE2\x94\x80"
     nap 0.003
   done
-  printf "\x1B\x9B%s%b" "${TRANSVERSE};H" ${t_top} "${COLUMNS}G" ${t_top}
-  printf "\x1B\x9B%s%b" "$((TRANSVERSE+1));H" ${t_bot} "${COLUMNS}G" ${t_bot}
+  # Ligate chars using saved cursor state and relative motion
+  echoes "\xE2\x95\xA8\x1B8" 2
+  printf "\x1BD\xE2\x95\xA5${fissure}\xE2\x95\xA5"
+  #printf "\xE2\x95\xA5\x1B\x9B${COLUMNS}G\xE2\x95\xA5"
+  nap 3
 }
 
 draw_frame() {
-  local -i i=${1:-1}
-  local -i j=${2:-1}
+  local -i idx_y=${1:-1}
+  local -i idx_x=${2:-1}
   local -i m=${3:-$LINES}
   local -i n=${4:-$COLUMNS}
-  local horz=$(repeat "\xE2\x95\x90" $((n - 2)))
+  local horz=$(echoes "\xE2\x95\x90" $((n - 2)))
   local vert="\xE2\x95\x91\x1B\x9B$((n-2))C\xE2\x95\x91"
   #       Cursor origin           ╔           ═           ╗
-  printf "\x1B\x9B${i};${j}H\xE2\x95\x94${horz}\xE2\x95\x97"
+  printf "\x1B\x9B${idx_y};${idx_x}H\xE2\x95\x94${horz}\xE2\x95\x97"
   # Every line but first and last ║                       ║
-  for((;offset++<m-2;)){ printf "\x1B\x9B$((i+offset));${j}H${vert}";}
+  for((;offset++<m-2;)){ printf "\x1B\x9B$((idx_y+offset));${idx_x}H${vert}";}
   #       origin + 1 down         ╚           ═           ╝
-  printf "\x1B\x9B$((i+m-1));${j}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
+  printf "\x1B\x9B$((idx_y+m-1));${idx_x}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
 }
 
 dive() {
