@@ -46,6 +46,8 @@ set showmode
 set wildmenu
 set wildmode=list:longest
 set shortmess=aost
+" Timing
+set timeoutlen=300
 
 
 " PERSISTENCE
@@ -64,16 +66,16 @@ augroup ligrc_toggle_CursorLine
   autocmd WinLeave * set nocursorline
   autocmd WinLeave * set cursorline
 augroup END
+"   Vertical split help window
+augroup ligrc_split_help_vert
+  autocmd!
+  autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
+augroup END
 "   Save and restore manual folds on exit
 augroup ligrc_fold_persistence
   autocmd!
   autocmd BufWinLeave * mkview
   autocmd BufWinEnter * silent! loadview
-augroup END
-"   Vertical split help window
-augroup ligrc_split_help_vert
-  autocmd!
-  autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
 augroup END
 
 
@@ -103,10 +105,10 @@ xnoremap <Leader>p "_dp
 inoremap () ()<LEFT>
 inoremap {} {}<LEFT>
 inoremap [] []<LEFT>
+inoremap "" ""<LEFT>
 inoremap (<LEADER> () 
 inoremap {<LEADER> {} 
 inoremap [<LEADER> [] 
 inoremap {<CR> {<CR><CR>}<UP><TAB>
-
 
 set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r
