@@ -19,7 +19,7 @@
 ########################################
 
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a READ_TTOPTS
+declare -a TTIN_OPTS
 readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
 
 declare -A _OPTS=(
@@ -39,7 +39,7 @@ die() {
   display_clean
   printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
   printf "press any key to continue"
-  for((;;)){ read "${READ_TTOPTS[@]}"; (($?>128)) || exit 1;}
+  for((;;)){ read "${TTIN_OPTS[@]}"; (($?>128)) || exit 1;}
 }
 
 echoes()for((i=0;i++<$2;)){ printf "$1";}
@@ -144,36 +144,26 @@ display_cleave() {
   }
 }
 
-read_key() {
-  local char
-  local sp
-  local str
-
-  while read -rsN1 char; do
-    [[ $char == $'\x1B' ]] && {
-      die "esc" 
-    }
-    case $char in
+ttin_parse() {
+  # Detecting escape characters
+  [[ $1 == $'\x1B' ]] && {
+    read "${TTIN_OPTS[@]}"
+    # Detecting potential control sequence indicators ('[' + sequence)
+    [[ "${REPLY}" != "[" ]] && die "esc" || read "${TTIN_OPTS[@]}"
+    case "$sp" in
+      A) echo "up";;
+      B) echo "down";;
+      C) echo "right";;
+      D) echo "left";;
+      *) exit 0;;
+    esac
+  }
+    case $1 in
       $'\x7F'|$'\x08') [ -z "$str" ] || str=${str:0:-1};;
       $'\n') echo "ent";;
       ' ') echo "sp";;
       'q') die "q";;
-      'j') die "q";;
-      'k') die "q";;
     esac
-  done
-
-    #        # Detecting control sequence indicators ('[' + sequence)
-    #        # is broken down into multiple steps
-    #        read -sn1 sp
-    #        [ "$sp" != "[" ] && die
-    #        read -sn1 sp
-    #        case "$sp" in
-    #            A) echo "up";;
-    #            B) echo "down";;
-    #            C) echo "right";;
-    #            D) echo "left";;
-    #            *) exit 0;;
     #        esac
     #    else
     #        str=$str"$char"
@@ -188,11 +178,11 @@ main() {
   trap 'display_clean' EXIT
   trap 'stty_sizeup; win_draw' SIGWINCH
   trap 'die "interrupted"' SIGINT
-  READ_TTOPTS=(-rsN1) && ((BASH_VERSINFO[0] > 3)) && READ_TTOPTS+=(-t 0.05)
+  TTIN_OPTS=(-rsN1) && ((BASH_VERSINFO[0] > 3)) && TTIN_OPTS+=(-t 0.05)
+  readonly TTIN_OPTS
   [[ $1 == -d ]] && test_size || stty_mod
   display_init
-  #for ((;;)){ read_key;}
-  read_key
+  for ((;;)){ read "${TTIN_OPTS[@]}" && ttin_parse "${REPLY}";}
   exit 0
 }
 main "$@"
