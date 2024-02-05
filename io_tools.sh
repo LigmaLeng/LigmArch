@@ -145,6 +145,7 @@ display_cleave() {
 }
 
 ttin_parse() {
+  local str
   # Detecting escape characters
   [[ $1 == $'\x1B' ]] && {
     read "${TTIN_OPTS[@]}" -N1
@@ -162,21 +163,19 @@ ttin_parse() {
       '6~') echo "pg_down";;
       *) echo "Key disabled";;
     esac
-  }
+  } || {
     case $1 in
-      $'\x7F'|$'\x08') [ -z "$str" ] || str=${str:0:-1};;
+      $'\x7F'|$'\x08')
+        [ -z "$str" ] || str=${str:0:-1} && printf "\x1B\x9BX"
+      ;;
       $'\n') echo "ent";;
-      ' ') echo "sp";;
-      'q') die "q";;
     esac
-    #        esac
-    #    else
-    #        str=$str"$char"
-    #    fi
+    str=$str"$1"
+
+  }
     #    clear
     #    echo "Search: $str"
     #    grep -im 10 "$str" lc.txt
-    #done
 }
 
 main() {
