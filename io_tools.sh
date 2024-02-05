@@ -19,7 +19,7 @@
 ########################################
 
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a RKB_OPTS
+declare -a READ_TTOPTS
 readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
 
 declare -A _OPTS=(
@@ -35,13 +35,11 @@ declare -A _OPTS=(
 )
 
 die() {
-  # Output to stderr
   local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
+  display_clean
   printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
   printf "press any key to continue"
-  for((;;)){ read -t 0.05 -rsN1; (($))}
-  read -rsN1
-  exit 0
+  for((;;)){ read "${READ_TTOPTS[@]}"; (($?>128)) || exit 1;}
 }
 
 echoes()for((i=0;i++<$2;)){ printf "$1";}
@@ -95,7 +93,7 @@ win_draw() {
   #       Last line off window    ╚           ═           ╝
   printf "\x1B\x9B$((idx_y+m-1));${idx_x}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
   #       Bring cursor into window and bound scrolling region
-  printf "\x1B\x9B$((idx_y+1));%s" "$((idx_x+1))H" "$((idx_y+m-1))r"
+  printf "\x1B\x9B$((idx_y+1));%s" "$((idx_y+m-2))r" "$((idx_x+1))H"
   #       Save cursor state for harmless convenience
   printf "\x1B7"
 }
@@ -106,17 +104,17 @@ display_init() {
   # 31m   Foreground red
   # ?25l  Hide cursor
   # ?7l   Disable line wrapping
-  printf "\x1B\x9B%s" 2J 31m ?25l ?7l "2;$((LINES-1))r"
+  printf "\x1B\x9B%s" 2J 31m ?25l ?7l
   win_draw
 }
 
 display_clean() {
-  # 2J    Clear screen
   # m     Reset Colours 
   # ?25h  Show cursor
   # ?7h   Disable line wrapping
+  # 2J    Clear screen
   # r     Reset scrolling region
-  printf "\x1B\x9B%s" 2J m ?25h ?7h r 
+  printf "\x1B\x9B%s" m ?25h ?7h 2J r
   # Reset stty if modified
   [[ -n "$STTY_BAK" ]] && stty $STTY_BAK
 }
@@ -140,7 +138,7 @@ display_cleave() {
   # A M B L: up  delete_line  down  insert_line
   ((LINES&1)) && printf "\x1B\x9B%s" A M B L A
   # Continue widening
-  for ((i=0;i++<(TRANSVERSE>>2)-(LINES&1))); {
+  for ((i=0;i++<(TRANSVERSE>>2)-(LINES&1);)); {
     printf "\x1B\x9B%s" A M B 2L A
     nap 0.015
   }
@@ -190,8 +188,8 @@ main() {
   trap 'display_clean' EXIT
   trap 'stty_sizeup; win_draw' SIGWINCH
   trap 'die "interrupted"' SIGINT
+  READ_TTOPTS=(-rsN1) && ((BASH_VERSINFO[0] > 3)) && READ_TTOPTS+=(-t 0.05)
   [[ $1 == -d ]] && test_size || stty_mod
-  ((BASH_VERSINFO[0] > 3)) && 
   display_init
   #for ((;;)){ read_key;}
   read_key
