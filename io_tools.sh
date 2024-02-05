@@ -33,12 +33,77 @@ declare -A _OPTS=(
 [userpass]=""
 )
 
-mod_stty() {
+die() {
+  # Output to stderr
+  local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
+  printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
+  printf "press any key to continue"
+  read -rsN1
+  exit 0
+}
+
+echoes()for((i=0;i++<$2;)){ printf "$1";}
+
+nap() {
+  # Reset IFS
+  local IFS
+  # Open temp file descriptor if doesn't exist
+  # and pipe a whole lot of nothing into it
+  [[ -n "${dragon_scroll:-}" ]] || { exec {dragon_scroll}<> <(:);} 2>/dev/null
+  # Attempt to read from empty file descriptor indefinitely if no timeout given
+  read ${1:+-t "$1"} -u $dragon_scroll || :
+}
+
+stty_mod() {
   readonly STTY_BAK=$(stty -g)
   stty -nl -echo -icanon -ixon -isig 
 }
 
-cleanup() {
+stty_sizeup() {
+  ((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
+  TRANSVERSE=$(((LINES+1)>>1))
+  SAGITTAL=$(((COLUMNS+1)>>1))
+}
+
+test_size() {
+  # Temp vars as invoking stty overrides values for LINES and COLUMNS
+  local -a dim
+  OPT_TEST=1
+  read -ra dim -p "Enter display size in {LINES} {COLUMNS} (ex: 25 80): "
+  stty_mod
+  (( ${#dim[@]} )) || return 0
+  !(( ${dim[0]} )) || !(( ${dim[1]} )) && die 'Parse Error'
+  LINES=${dim[0]}
+  COLUMNS=${dim[1]}
+  return 0
+}
+
+win_draw() {
+  local -i idx_y=${1:-1}
+  local -i idx_x=${2:-1}
+  local -i m=${3:-$LINES}
+  local -i n=${4:-$COLUMNS}
+  local horz=$(echoes "\xE2\x95\x90" $((n - 2)))
+  local vert="\xE2\x95\x91\x1B\x9B$((n-2))C\xE2\x95\x91"
+  #       Cursor origin           ╔           ═           ╗
+  printf "\x1B\x9B${idx_y};${idx_x}H\xE2\x95\x94${horz}\xE2\x95\x97"
+  # Every line but first and last ║                       ║
+  for((;offset++<m-2;)){ printf "\x1B\x9B$((idx_y+offset));${idx_x}H${vert}";}
+  #       origin + 1 down         ╚           ═           ╝
+  printf "\x1B\x9B$((idx_y+m-1));${idx_x}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
+}
+
+display_init() {
+  stty_sizeup
+  # 2J    Clear screen
+  # 31m   Foreground red
+  # ?25l  Hide cursor
+  # ?7l   Disable line wrapping
+  printf "\x1B\x9B%s" 2J 31m ?25l ?7l "2;$((LINES-1))r"
+  win_draw
+}
+
+display_clean() {
   # 2J    Clear screen
   # m     Reset Colours 
   # ?25h  Show cursor
@@ -49,51 +114,7 @@ cleanup() {
   [[ -n "$STTY_BAK" ]] && stty $STTY_BAK
 }
 
-die() {
-  # Output to stderr
-  local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
-  printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
-  printf "press any key to continue"
-  read -rsN1
-  exit 0
-}
-
-get_size() {
-  ((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
-  TRANSVERSE=$(((LINES+1)>>1))
-  SAGITTAL=$(((COLUMNS+1)>>1))
-}
-
-test_prompt() {
-  # Temp vars as invoking stty overrides values for LINES and COLUMNS
-  local -a dim
-  OPT_TEST=1
-  read -ra dim -p "Enter display size in {LINES} {COLUMNS} (ex: 25 80): "
-  mod_stty
-  (( ${#dim[@]} )) || return 0
-  !(( ${dim[0]} )) || !(( ${dim[1]} )) && die 'Parse Error'
-  LINES=${dim[0]}
-  COLUMNS=${dim[1]}
-  return 0
-}
-
-win_init() {
-  # 2J    Clear screen
-  # 31m   Foreground red
-  # ?25l  Hide cursor
-  # ?7l   Disable line wrapping
-  printf "\x1B\x9B%s" 2J 31m ?25l ?7l "2;$((LINES-1))r"
-}
-
-echoes()for((i=0;i++<$2;)){ printf "$1";}
-
-nap() {
-  local IFS # Reset IFS
-  [[ -n "${_nap_fd:-}" ]] || { exec {_nap_fd}<> <(:); } 2>/dev/null
-  read ${1:+-t "$1"} -u $_nap_fd || :
-}
-
-cleave_display() {
+display_cleave() {
   local fissure=$(echoes "\xE2\x94\x80" $((COLUMNS-2)))
   # Cursor on transverse plane and save cursor state
   printf "\x1B\x9B${TRANSVERSE};H\x1B7"
@@ -118,22 +139,7 @@ cleave_display() {
   done
 }
 
-draw_frame() {
-  local -i idx_y=${1:-1}
-  local -i idx_x=${2:-1}
-  local -i m=${3:-$LINES}
-  local -i n=${4:-$COLUMNS}
-  local horz=$(echoes "\xE2\x95\x90" $((n - 2)))
-  local vert="\xE2\x95\x91\x1B\x9B$((n-2))C\xE2\x95\x91"
-  #       Cursor origin           ╔           ═           ╗
-  printf "\x1B\x9B${idx_y};${idx_x}H\xE2\x95\x94${horz}\xE2\x95\x97"
-  # Every line but first and last ║                       ║
-  for((;offset++<m-2;)){ printf "\x1B\x9B$((idx_y+offset));${idx_x}H${vert}";}
-  #       origin + 1 down         ╚           ═           ╝
-  printf "\x1B\x9B$((idx_y+m-1));${idx_x}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
-}
-
-dive() {
+read_key() {
   local char
   local sp
   local str
@@ -175,15 +181,12 @@ dive() {
 }
 
 main() {
-  trap 'cleanup' EXIT
-  trap 'get_size; draw_frame' SIGWINCH SIGCONT
+  trap 'display_clean' EXIT
+  trap 'stty_sizeup; win_draw' SIGWINCH SIGCONT
   trap 'die "Interrupted"' SIGINT
-  [[ $1 == -t ]] && test_prompt || mod_stty
-  get_size
-  win_init
-  draw_frame
-  #dive
-  cleave_display
+  [[ $1 == -t ]] && test_size || stty_mod
+  display_init
+  read_key
   nap 1
   exit 0
 }
