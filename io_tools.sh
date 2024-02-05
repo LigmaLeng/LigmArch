@@ -39,7 +39,7 @@ die() {
   display_clean
   printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
   printf "press any key to continue"
-  for((;;)){ read "${TTIN_OPTS[@]}"; (($?>128)) || exit 1;}
+  for((;;)){ read "${TTIN_OPTS[@]}" -N1; (($?>128)) || exit 1;}
 }
 
 echoes()for((i=0;i++<$2;)){ printf "$1";}
@@ -147,15 +147,20 @@ display_cleave() {
 ttin_parse() {
   # Detecting escape characters
   [[ $1 == $'\x1B' ]] && {
-    read "${TTIN_OPTS[@]}"
+    read "${TTIN_OPTS[@]}" -N1
     # Detecting potential control sequence indicators ('[' + sequence)
-    [[ "${REPLY}" != "[" ]] && die "esc" || read "${TTIN_OPTS[@]}"
-    case "$sp" in
+    [[ "${REPLY}" != "[" ]] && die "esc" || read "${TTIN_OPTS[@]}" -N2
+    case "${REPLY}" in
       A) echo "up";;
       B) echo "down";;
       C) echo "right";;
       D) echo "left";;
-      *) exit 0;;
+      '1~') echo "home";;
+      '3~') echo "del";;
+      '4~') echo "end";;
+      '5~') echo "pg_up";;
+      '6~') echo "pg_down";;
+      *) echo "Key disabled";;
     esac
   }
     case $1 in
@@ -178,11 +183,11 @@ main() {
   trap 'display_clean' EXIT
   trap 'stty_sizeup; win_draw' SIGWINCH
   trap 'die "interrupted"' SIGINT
-  TTIN_OPTS=(-rsN1) && ((BASH_VERSINFO[0] > 3)) && TTIN_OPTS+=(-t 0.05)
+  TTIN_OPTS=(-rs) && ((BASH_VERSINFO[0] > 3)) && TTIN_OPTS+=(-t 0.02)
   readonly TTIN_OPTS
   [[ $1 == -d ]] && test_size || stty_mod
   display_init
-  for ((;;)){ read "${TTIN_OPTS[@]}" && ttin_parse "${REPLY}";}
+  for ((;;)){ read "${TTIN_OPTS[@]}" -N1 && ttin_parse "${REPLY}";}
   exit 0
 }
 main "$@"
