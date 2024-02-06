@@ -124,7 +124,7 @@ display_cleave() {
   # Cursor on transverse plane and save cursor state
   printf "\x1B\x9B${TRANSVERSE};H\x1B7"
   # Grow fissure from from saggital plane laterally along transverse plane
-  for ((i=0;i++<SAGITTAL-1;)); {
+  for ((i=0; i < SAGITTAL-1; i++)); {
     printf "\x1B\x9B$(( SAGITTAL - i))G\xE2\x95\x90"
     printf "\x1B\x9B$(( SAGITTAL + i + !(COLUMNS&1) ))G\xE2\x95\x90"
     nap 0.004
@@ -138,10 +138,31 @@ display_cleave() {
   # A M B L: up  delete_line  down  insert_line
   ((LINES&1)) && printf "\x1B\x9B%s" A M B L A
   # Continue widening
-  for ((i=0;i++<(TRANSVERSE>>2)-(LINES&1);)); {
+  for ((i=0; i < (TRANSVERSE>>2) - (LINES&1); i++)); {
     printf "\x1B\x9B%s" A M B 2L A
     nap 0.015
   }
+}
+
+exit_sequence() {
+  local exit_query='Abort setup process'
+  local exit_opts=('(Y|y)es' '(N|n)o')
+  display_cleave
+  printf "\x1B\x9B$((TRANSVERSE-(LINES&1)));${SAGITTAL}H\x1B7"
+  ((COLUMNS&1)) && exit_query+=' ' && exit_opts[0]+=' '
+  exit_query+='?' && exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
+  printf "\x1B\x9B$(((${#exit_query}>>1)-!(COLUMNS&1)))D${exit_query}"
+  printf "\x1B8\x1BD\x1B\x9B$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
+  for((;;)); {
+    read "${TTIN_OPTS[@]}" -N1
+    (($?>128)) && continue
+    case "${REPLY}" in
+      Y|y) exit 0;;
+      N|n) break;;
+      *) continue;;
+    esac
+  }
+  display_init
 }
 
 ttin_parse() {
@@ -150,7 +171,7 @@ ttin_parse() {
   [[ $1 == $'\x1B' ]] && {
     read "${TTIN_OPTS[@]}" -N1
     # Detecting potential control sequence indicators ('[' + sequence)
-    [[ "${REPLY}" != "[" ]] && die "esc" || read "${TTIN_OPTS[@]}" -N2
+    [[ "${REPLY}" != "[" ]] && exit_sequence || read "${TTIN_OPTS[@]}" -N2
     case "${REPLY}" in
       A) echo "up";;
       B) echo "down";;
@@ -171,7 +192,6 @@ ttin_parse() {
       $'\n') echo "ent";;
     esac
     str=$str"$1"
-
   }
     #    clear
     #    echo "Search: $str"
@@ -181,12 +201,12 @@ ttin_parse() {
 main() {
   trap 'display_clean' EXIT
   trap 'stty_sizeup; win_draw' SIGWINCH
-  trap 'die "interrupted"' SIGINT
+  trap 'exit_sequence' SIGINT
   TTIN_OPTS=(-rs) && ((BASH_VERSINFO[0] > 3)) && TTIN_OPTS+=(-t 0.02)
   readonly TTIN_OPTS
   [[ $1 == -d ]] && test_size || stty_mod
   display_init
+  win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
   for ((;;)){ read "${TTIN_OPTS[@]}" -N1 && ttin_parse "${REPLY}";}
-  exit 0
 }
 main "$@"
