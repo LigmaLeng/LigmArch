@@ -55,8 +55,11 @@ nap() {
 }
 
 stty_mod() {
+  # Backup stty settings for cleanup on exit
   readonly STTY_BAK=$(stty -g)
-  stty -nl -echo -icanon -ixon isig 
+  # Undefining binding for suspend signal as it breaks during reading input
+  # Refer to stty manual for other option definitons
+  stty -nl -echo -icanon -ixon isig susp undef
 }
 
 stty_sizeup() {
@@ -148,13 +151,20 @@ exit_sequence() {
   local exit_query='Abort setup process'
   local exit_opts=('(Y|y)es' '(N|n)o')
   display_cleave
-  printf "\x1B\x9B$((TRANSVERSE-(LINES&1)));${SAGITTAL}H\x1B7"
+  # Center cursor
+  printf "\x1B\x9B$((TRANSVERSE-(LINES&1)));${SAGITTAL}H"
+  # Pad strings if columns are odd
   ((COLUMNS&1)) && exit_query+=' ' && exit_opts[0]+=' '
+  # Finalise query and concatenate option strings
   exit_query+='?' && exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
+  # Center and print query and option strings based on length
   printf "\x1B\x9B$(((${#exit_query}>>1)-!(COLUMNS&1)))D${exit_query}"
-  printf "\x1B8\x1BD\x1B\x9B$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
+  printf "\x1B\x9B${SAGITTAL}G\x1BD"
+  printf "\x1B\x9B$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
+  # Infinite loop for confirmation
   for((;;)); {
     read "${TTIN_OPTS[@]}" -N1
+    # Continue loop if timed out
     (($?>128)) && continue
     case "${REPLY}" in
       Y|y) exit 0;;
@@ -165,24 +175,9 @@ exit_sequence() {
   display_init
 }
 
-########################################
-#(INSERT FUNCTION DESCRIPTON)
-#Globals:
-#  (DELETE INCLUDING DECLARATION IF NONE)
-#  eg:
-#  BACKUP_DIR
-#  SOMEDIR
-#Arguments:
-#  None
-#Outputs:
-#  (DELETE INCLUDING DECLARATION IF NONE)
-#  eg: Writes location to stdout
-#Returns:
-#  0 if ESC key pressed
-#  1 if ENTER key pressed
-########################################
 ttin_parse() {
-  local str
+  local -i str_idx=0
+  local str=""
   # Infinite loop
   for ((;;)); {
     read "${TTIN_OPTS[@]}" -N1
@@ -190,27 +185,49 @@ ttin_parse() {
     (($?>128)) && continue
     # Handling escape characters
     [[ "${REPLY}" == $'\x1B' ]] && {
-      # Handling control sequence indicators ('[' + sequence)
       read "${TTIN_OPTS[@]}" -N1
+      # Handling control sequence indicators ('[' + sequence)
       [[ "${REPLY}" != "[" ]] && return 0 || read "${TTIN_OPTS[@]}" -N2
       case "${REPLY}" in
-        A) printf "\x1B8U";; # dpad up
-        B) printf "\x1B8D";; # dpad down
-        C) printf "\x1B8R";; # dpad right
-        D) printf "\x1B8L";; # dpad left
-        '1~') printf "\x1B8HOME";; # home
-        '3~') printf "\x1B8DEL";; # del
-        '4~') printf "\x1B8END";; # end
-        '5~') printf "\x1B8PG_U";; # pg up
-        '6~') printf "\x1B8PG_D";; # pg down
-        *) printf "Key disabled";;
+        # UP
+        A) printf "\x1B8U";;
+        # DOWN
+        B) printf "\x1B8D";;
+        # RIGHT
+        C) ((str_idx < ${#str})) && str_idx++ && printf "\x1B\x9BC";;
+        # LEFT
+        D) ((str_idx)) && str_idx-- && printf "\x1B\x9BD";;
+        # HOME
+        '1~') ((str_idx)) && str_idx=0 && printf "\x1B8";;
+        # DEL
+        '3~') printf "\x1B8DEL";;
+        # END
+        '4~')
+          ((str_idx < ${#str})) && {
+            str_idx=${#str} && printf "\x1B8\x1B\x9B${#str}C"
+          }
+        ;;
+        # pg up
+        '5~') printf "\x1B8PG_U";;
+        # pg down
+        '6~') printf "\x1B8PG_D";;
+        # Do nothing
+        *) :;;
       esac
     } || {
       case "${REPLY}" in
         $'\x7F'|$'\x08')
-          [ -z "${str}" ] || str=${str:0:-1}
+          ((str_idx)) && {
+            printf "\x08"
+            ((str_idx == ${#str})) && str=${str:0:-1} && printf "\x20\x08" || {
+              printf "${str:${str_idx}}"
+              printf "\x1B\x9B%s" X "$((${#str} - str_idx))D"
+              str=${str:0:${str_idx}}${str:${str_idx}}
+            }
+            str_idx--
+          }
         ;;
-        $'\n') return 1;; # newline (stty set to icrnl)
+        $'\x0A') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
       esac
       str=$str"$1"
       printf "\x1B8$str"
