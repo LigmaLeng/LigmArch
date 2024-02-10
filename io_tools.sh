@@ -165,37 +165,65 @@ exit_sequence() {
   display_init
 }
 
+########################################
+#(INSERT FUNCTION DESCRIPTON)
+#Globals:
+#  (DELETE INCLUDING DECLARATION IF NONE)
+#  eg:
+#  BACKUP_DIR
+#  SOMEDIR
+#Arguments:
+#  None
+#Outputs:
+#  (DELETE INCLUDING DECLARATION IF NONE)
+#  eg: Writes location to stdout
+#Returns:
+#  0 if ESC key pressed
+#  1 if ENTER key pressed
+########################################
 ttin_parse() {
   local str
-  # Detecting escape characters
-  [[ $1 == $'\x1B' ]] && {
+  # Infinite loop
+  for ((;;)); {
     read "${TTIN_OPTS[@]}" -N1
-    # Detecting potential control sequence indicators ('[' + sequence)
-    [[ "${REPLY}" != "[" ]] && exit_sequence || read "${TTIN_OPTS[@]}" -N2
-    case "${REPLY}" in
-      A) echo "up";;
-      B) echo "down";;
-      C) echo "right";;
-      D) echo "left";;
-      '1~') echo "home";;
-      '3~') echo "del";;
-      '4~') echo "end";;
-      '5~') echo "pg_up";;
-      '6~') echo "pg_down";;
-      *) echo "Key disabled";;
-    esac
-  } || {
-    case $1 in
-      $'\x7F'|$'\x08')
-        [ -z "$str" ] || str=${str:0:-1} && printf "\x1B\x9BX"
-      ;;
-      $'\n') echo "ent";;
-    esac
-    str=$str"$1"
+    # Continue loop if read times out from lack of input
+    (($?>128)) && continue
+    # Handling escape characters
+    [[ "${REPLY}" == $'\x1B' ]] && {
+      # Handling control sequence indicators ('[' + sequence)
+      read "${TTIN_OPTS[@]}" -N1
+      [[ "${REPLY}" != "[" ]] && return 0 || read "${TTIN_OPTS[@]}" -N2
+      case "${REPLY}" in
+        A) printf "\x1B8U";; # dpad up
+        B) printf "\x1B8D";; # dpad down
+        C) printf "\x1B8R";; # dpad right
+        D) printf "\x1B8L";; # dpad left
+        '1~') printf "\x1B8HOME";; # home
+        '3~') printf "\x1B8DEL";; # del
+        '4~') printf "\x1B8END";; # end
+        '5~') printf "\x1B8PG_U";; # pg up
+        '6~') printf "\x1B8PG_D";; # pg down
+        *) printf "Key disabled";;
+      esac
+    } || {
+      case "${REPLY}" in
+        $'\x7F'|$'\x08')
+          [ -z "${str}" ] || str=${str:0:-1}
+        ;;
+        $'\n') return 1;; # newline (stty set to icrnl)
+      esac
+      str=$str"$1"
+      printf "\x1B8$str"
+    }
   }
-    #    clear
-    #    echo "Search: $str"
-    #    grep -im 10 "$str" lc.txt
+}
+
+keymap_handler() {
+  local keymaps=($(localectl list-keymaps))
+  win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
+  ttin_parse
+  #printf "\x1B8\x1B\x9B$((SAGITTAL-3))@"
+  #printf "%s\x1B8\x1BD\x1B7" ${keymaps[1]}
 }
 
 main() {
@@ -206,7 +234,7 @@ main() {
   readonly TTIN_OPTS
   [[ $1 == -d ]] && test_size || stty_mod
   display_init
-  win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
-  for ((;;)){ read "${TTIN_OPTS[@]}" -N1 && ttin_parse "${REPLY}";}
+  keymap_handler
+  exit_sequence
 }
 main "$@"
