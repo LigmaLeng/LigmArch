@@ -37,7 +37,7 @@ declare -A _OPTS=(
 die() {
   local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
   display_clean
-  printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
+  printf "%s: line %d: %s: %s\x0D\x0A" ${bash_trace[@]} "${1-Died}" >&2
   printf "press any key to continue"
   for((;;)){ read "${TTIN_OPTS[@]}" -N1; (($?>128)) || exit 1;}
 }
@@ -59,7 +59,7 @@ stty_mod() {
   readonly STTY_BAK=$(stty -g)
   # Undefining binding for suspend signal as it breaks during reading input
   # Refer to stty manual for other option definitons
-  stty -nl -echo -icanon -ixon isig susp undef
+  stty -echo -icanon -ixon nl isig susp undef
 }
 
 stty_sizeup() {
@@ -97,8 +97,6 @@ win_draw() {
   printf "\x1B\x9B$((idx_y+m-1));${idx_x}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
   #       Bring cursor into window and bound scrolling region
   printf "\x1B\x9B$((idx_y+1));%s" "$((idx_y+m-2))r" "$((idx_x+1))H"
-  #       Save cursor state for harmless convenience
-  printf "\x1B7"
 }
 
 display_init() {
@@ -133,10 +131,10 @@ display_cleave() {
     nap 0.004
   }
   # Ligate fissure
-  echoes "\xE2\x95\xAC\x1B\x9B${TRANSVERSE};H" 2 && nap 0.1
+  echoes "\xE2\x95\xAC\x0D" 2 && nap 0.1
   # Pilot cleavage and swap ligatures
-  printf "\xE2\x95\xA8%b" $fissure "\n"
-  printf "\xE2\x95\xA5%b" $fissure "\x1B\x9B${TRANSVERSE};H"
+  printf "\xE2\x95\xA8%b" ${fissure} "\x0D\x0A"
+  printf "\xE2\x95\xA5%b" ${fissure} "\x1B\x9BA\x0D"
   # Widen pilot cleave if lines are odd
   # A M B L: up  delete_line  down  insert_line
   ((LINES&1)) && printf "\x1B\x9B%s" A M B L A
@@ -159,7 +157,7 @@ exit_sequence() {
   exit_query+='?' && exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
   # Center and print query and option strings based on length
   printf "\x1B\x9B$(((${#exit_query}>>1)-!(COLUMNS&1)))D${exit_query}"
-  printf "\x1B\x9B${SAGITTAL}G\x1BD"
+  printf "\x1B\x9B${SAGITTAL}G\x0D"
   printf "\x1B\x9B$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
   # Infinite loop for confirmation
   for((;;)); {
@@ -178,6 +176,8 @@ exit_sequence() {
 ttin_parse() {
   local -i str_idx=0
   local str=""
+  # Show cursor and save cursor state
+  printf "\x1B\x9B" ?25h s
   # Infinite loop
   for ((;;)); {
     read "${TTIN_OPTS[@]}" -N1
@@ -186,55 +186,63 @@ ttin_parse() {
     # Handling escape characters
     [[ "${REPLY}" == $'\x1B' ]] && {
       read "${TTIN_OPTS[@]}" -N1
-      # Handling control sequence indicators ('[' + sequence)
+      # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
       [[ "${REPLY}" != "[" ]] && return 0 || read "${TTIN_OPTS[@]}" -N2
       case "${REPLY}" in
         # UP
-        A) printf "\x1B8U";;
+        A) printf "\x1B\x9BuUP";;
         # DOWN
-        B) printf "\x1B8D";;
+        B) printf "\x1B\x9BuDOWN";;
         # RIGHT
-        C) ((str_idx < ${#str})) && str_idx++ && printf "\x1B\x9BC";;
+        C) ((str_idx < ${#str})) && ((str_idx++)) && printf "\x1B\x9BC";;
         # LEFT
-        D) ((str_idx)) && str_idx-- && printf "\x1B\x9BD";;
+        D) ((str_idx)) && ((str_idx--)) && printf '\x08';;
         # HOME
-        '1~') ((str_idx)) && str_idx=0 && printf "\x1B8";;
+        '1~') ((str_idx)) && printf "\x1B\x9B${str_idx}D" && str_idx=0;;
         # DEL
-        '3~') printf "\x1B8DEL";;
+        '3~')
+          # If in middle of string 
+          ((str_idx != ${#str})) && {
+            # Print string tail if any, erase trailing char, and reset cursor
+            printf '%s' ${str:$((str_idx + 1))}
+            printf '%b' "\x20" "\x1B\x9B$(( ${#str} - str_idx ))D"
+            str=${str:0:${str_idx}}"${str:$((str_idx + 1))}"
+          }
+        ;;
         # END
         '4~')
           ((str_idx < ${#str})) && {
-            str_idx=${#str} && printf "\x1B8\x1B\x9B${#str}C"
+            printf "\x1B\x9B$(( ${#str} - str_idx ))C"
+            str_idx=${#str}
           }
         ;;
         # pg up
-        '5~') printf "\x1B8PG_U";;
+        '5~') printf "\x1B\x9BuPgUP";;
         # pg down
-        '6~') printf "\x1B8PG_D";;
+        '6~') printf "\x1B\x9BuPgDOWN";;
         # Do nothing
         *) :;;
       esac
     } || {
       case "${REPLY}" in
         $'\x7F'|$'\x08')
+          # If index more than 0, print ANSI backspace (i.e. move cursor left)
           ((str_idx)) && {
-            # ANSI backspace from current column
             printf "\x08"
-            # If at end of string, simple trim and space+backspace
+            # If at last index, do a simple trim and space+backspace
             ((str_idx == ${#str})) && str=${str:0:-1} && printf "\x20\x08" || {
-              # Else print string tail, erase trailing char, and set cursor back
-              printf "${str:${str_idx}}"
+              # Else print string tail, and erase trailing char with CSI instead
+              # of whitespace (unlike when handling DEL key above) which allows
+              # convenient re-use of arithmetic syntax when repositioning cursor
+              printf '%s' ${str:${str_idx}}
               printf "\x1B\x9B%s" X "$((${#str} - str_idx))D"
-              # Trim char in middle of string
-              str=${str:0:${str_idx}}"${str:${str_idx}}"
+              str=${str:0:$((str_idx - 1))}"${str:${str_idx}}"
             }
-            str_idx--
+            ((str_idx--))
           }
         ;;
-        $'\x0A') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
-        *)
-          printf ${REPLY}
-          str=$str"${REPLY}"
+        $'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
+        *) printf "${REPLY}" && str=$str"${REPLY}" && ((str_idx++));;
       esac
     }
   }
@@ -244,8 +252,7 @@ keymap_handler() {
   local keymaps=($(localectl list-keymaps))
   win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
   ttin_parse
-  #printf "\x1B8\x1B\x9B$((SAGITTAL-3))@"
-  #printf "%s\x1B8\x1BD\x1B7" ${keymaps[1]}
+  #printf "%s" ${keymaps[@]}
 }
 
 main() {
