@@ -1,8 +1,6 @@
 " FORMATTING
 set nocompatible
 set fileformat=unix
-set encoding=utf-8
-filetype on
 filetype plugin on
 syntax on
 " SPACING
@@ -12,8 +10,7 @@ set autoindent
 set smartindent
 set tabstop=2
 set expandtab
-set smarttab
-set backspace=2
+set backspace=indent,eol,start
 
 
 " UI
@@ -27,7 +24,6 @@ set incsearch
 set hlsearch
 set ignorecase
 set smartcase
-set cursorline
 set scrolloff=5
 "   Drawing
 set lazyredraw
@@ -58,26 +54,18 @@ if has("persistent_undo")
 endif
 
 
-" AUTOCOMMAND 
+" AUTOCOMMANDS
 "
-"   Focus cursor
-augroup ligrc_toggle_CursorLine
+augroup waxON_waxOFF
   autocmd!
-  autocmd WinLeave * set nocursorline
-  autocmd WinLeave * set cursorline
+  " Save view on leaving leaving buffer to restore manual folds etc
+  au BufWinLeave * if &l:buftype !=# "help" && &ft !=# "netrw" | mkview | endif
+  " Vertically split window if buffer from help else load existing views
+  au BufWinEnter * if &l:buftype ==# "help" | wincmd L | else | silent! loadview | endif
+  " Toggle cursorlines when jumping between buffers
+  au VimEnter,WinEnter,BufWinEnter * setlocal cursorline
+  au WinLeave * setlocal nocursorline
 augroup END
-"   Vertical split help window
-augroup ligrc_split_help_vert
-  autocmd!
-  autocmd BufEnter *.txt if &buftype == "help" | wincmd L | endif
-augroup END
-"   Save and restore manual folds on exit
-augroup ligrc_fold_persistence
-  autocmd!
-  autocmd BufWinLeave * mkview
-  autocmd BufWinEnter * silent! loadview
-augroup END
-
 
 " MAPPINGS
 "
