@@ -56,15 +56,16 @@ endif
 
 " AUTOCOMMANDS
 "
-augroup waxON_waxOFF
+augroup ligrc_wax_on
   autocmd!
-  " Save view on leaving leaving buffer to restore manual folds etc
-  au BufWinLeave * if &l:buftype !=# "help" && &ft !=# "netrw" | mkview | endif
-  " Vertically split window if buffer from help else load existing views
-  au BufWinEnter * if &l:buftype ==# "help" | wincmd L | else | silent! loadview | endif
-  " Toggle cursorlines when jumping between buffers
-  au VimEnter,WinEnter,BufWinEnter * setlocal cursorline
-  au WinLeave * setlocal nocursorline
+  autocmd BufWinEnter *.txt if &l:buftype ==# 'help' | wincmd L | endif
+  autocmd BufWinEnter * silent! loadview
+  autocmd WinEnter * setlocal cursorline
+augroup END
+augroup ligrc_wax_off
+  autocmd!
+  autocmd BufWinLeave * if &buftype !=# 'help' | elseif &ft !=# 'netrw' | mkview | endif
+  autocmd WinLeave * setlocal nocursorline
 augroup END
 
 " MAPPINGS
