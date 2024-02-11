@@ -55,17 +55,22 @@ endif
 
 
 " AUTOCOMMANDS
-"
-augroup ligrc_wax_on
-  autocmd!
-  autocmd BufWinEnter *.txt if &l:buftype ==# 'help' | wincmd L | endif
-  autocmd BufWinEnter * silent! loadview
-  autocmd WinEnter * setlocal cursorline
-augroup END
-augroup ligrc_wax_off
-  autocmd!
-  autocmd BufWinLeave * if &buftype !=# 'help' | elseif &ft !=# 'netrw' | mkview | endif
-  autocmd WinLeave * setlocal nocursorline
+augroup ligrc_winch
+  au!
+  au WinLeave * setlocal nocursorline
+  au BufWinLeave * {
+    if !(&l:buftype =~# 'help\|nowrite\|nofile\|terminal' || &ft ==# 'netrw')
+      mkview
+    endif
+  }
+  au VimEnter,WinEnter * setlocal cursorline
+  au BufWinEnter * {
+    if &l:buftype ==# 'help'
+      wincmd L
+    else
+      silent! loadview
+    endif
+  }
 augroup END
 
 " MAPPINGS
