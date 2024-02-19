@@ -155,7 +155,7 @@ curs_store() {
 
 curs_load() {
   local -n ref=${1}
-  printf "\x1B\x9B%s" "${ref[0]};${ref[1]}H"
+  printf "\x1B\x9B%s" "${ref[0]};${ref[1]}H" 's'
 }
 
 exit_sequence() {
@@ -236,6 +236,7 @@ ttin_parse() {
         # Do nothing
         *) :;;
       esac
+      continue
     } || {
       case "${REPLY}" in
         $'\x7F'|$'\x08')
@@ -255,6 +256,8 @@ ttin_parse() {
           }
         ;;
         $'\x0A'|$'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
+        $'\x0E') printf "\x0F";; # Prevent activation of G1 translation table
+        $'\x07'|$'\x09'|$'\x18'|$'\x1A') :;; # Ignore other C0 control codes
         *) printf "${REPLY}" && str=$str"${REPLY}" && ((str_idx++));;
       esac
     }
