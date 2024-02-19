@@ -1,0 +1,4 @@
+set bg=light
+highlight Folded ctermbg=none
+highlight Comment ctermfg=2
+highlight CursorLine cterm=none ctermbg=4

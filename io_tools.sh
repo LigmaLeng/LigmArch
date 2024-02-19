@@ -95,8 +95,10 @@ win_draw() {
   for((;offset++<m-2;)){ printf "\x1B\x9B$((idx_y+offset));${idx_x}H${vert}";}
   #       Last line off window    ╚           ═           ╝
   printf "\x1B\x9B$((idx_y+m-1));${idx_x}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
-  #       Bring cursor into window and bound scrolling region
+  #       Bound scrolling region, bring cursor into window
   printf "\x1B\x9B$((idx_y+1));%s" "$((idx_y+m-2))r" "$((idx_x+1))H"
+  #       Save cursor location
+  printf "\x1B\x9Bs"
 }
 
 display_init() {
@@ -128,7 +130,7 @@ display_cleave() {
   for ((i=0; i < SAGITTAL-1; i++)); {
     printf "\x1B\x9B$(( SAGITTAL - i))G\xE2\x95\x90"
     printf "\x1B\x9B$(( SAGITTAL + i + !(COLUMNS&1) ))G\xE2\x95\x90"
-    nap 0.004
+    nap 0.003
   }
   # Ligate fissure
   echoes "\xE2\x95\xAC\x0D" 2 && nap 0.1
@@ -141,13 +143,26 @@ display_cleave() {
   # Continue widening
   for ((i=0; i < (TRANSVERSE>>2) - (LINES&1); i++)); {
     printf "\x1B\x9B%s" A M B 2L A
-    nap 0.015
+    nap 0.02
   }
+}
+
+curs_store() {
+  local -n ref=$1
+  local IFS='[;'
+  read -rs -d R -p $'\x1B\x9B6n' _ ref[0] ref[1] _
+}
+
+curs_load() {
+  local -n ref=${1}
+  printf "\x1B\x9B%s" "${ref[0]};${ref[1]}H"
 }
 
 exit_sequence() {
   local exit_query='Abort setup process'
   local exit_opts=('(Y|y)es' '(N|n)o')
+  local -a curs
+  curs_store curs
   display_cleave
   # Center cursor
   printf "\x1B\x9B$((TRANSVERSE-(LINES&1)));${SAGITTAL}H"
@@ -157,7 +172,7 @@ exit_sequence() {
   exit_query+='?' && exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
   # Center and print query and option strings based on length
   printf "\x1B\x9B$(((${#exit_query}>>1)-!(COLUMNS&1)))D${exit_query}"
-  printf "\x1B\x9B${SAGITTAL}G\x0D"
+  printf "\x1B\x9B${SAGITTAL}G\x1B\x9B2B"
   printf "\x1B\x9B$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
   # Infinite loop for confirmation
   for((;;)); {
@@ -170,14 +185,12 @@ exit_sequence() {
       *) continue;;
     esac
   }
-  display_init
+  display_init && curs_load curs
 }
 
 ttin_parse() {
   local -i str_idx=0
   local str=""
-  # Show cursor and save cursor state
-  printf "\x1B\x9B" ?25h s
   # Infinite loop
   for ((;;)); {
     read "${TTIN_OPTS[@]}" -N1
@@ -241,7 +254,7 @@ ttin_parse() {
             ((str_idx--))
           }
         ;;
-        $'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
+        $'\x0A'|$'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
         *) printf "${REPLY}" && str=$str"${REPLY}" && ((str_idx++));;
       esac
     }
@@ -250,9 +263,12 @@ ttin_parse() {
 
 keymap_handler() {
   local keymaps=($(localectl list-keymaps))
+  local -a curs
+  curs_store curs
   win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
   ttin_parse
   #printf "%s" ${keymaps[@]}
+  curs_load curs
 }
 
 main() {
