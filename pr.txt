@@ -1,0 +1,1 @@
+for ((i=31;i++<255;)){ hint=$(printf '\\%#x' $i); printf '%#x %b\n' $i $hint >> te.txt}
