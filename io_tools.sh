@@ -37,7 +37,7 @@ declare -A _OPTS=(
 die() {
   local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
   display_clean
-  printf "%s: line %d: %s: %s\x0D\x0A" ${bash_trace[@]} "${1-Died}" >&2
+  printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
   printf "press any key to continue"
   for((;;)){ read "${TTIN_OPTS[@]}" -N1; (($?>128)) || exit 1;}
 }
@@ -49,20 +49,22 @@ nap() {
   local IFS
   # Open temp file descriptor if doesn't exist
   # and pipe a whole lot of nothing into it
-  [[ -n "${dragon_scroll:-}" ]] || { exec {dragon_scroll}<> <(:);} 2>/dev/null
+  [[ -n "${nap_fd:-}" ]] || { exec {nap_fd}<> <(:);} 2>/dev/null
   # Attempt to read from empty file descriptor indefinitely if no timeout given
-  read ${1:+-t "$1"} -u $dragon_scroll || :
+  read ${1:+-t "$1"} -u $nap_fd || :
 }
 
-stty_mod() {
+set_con() {
   # Backup stty settings for cleanup on exit
   readonly STTY_BAK=$(stty -g)
   # Undefining binding for suspend signal as it breaks during reading input
-  # Refer to stty manual for other option definitons
-  stty -echo -icanon -ixon nl isig susp undef
+  # Other options explained in stty manpage
+  stty -echo -icanon -ixon -icrnl isig susp undef
+  # Select default (single byte character set)
+  printf "\x1B%%@"
 }
 
-stty_sizeup() {
+get_con_size() {
   ((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
   TRANSVERSE=$(((LINES+1)>>1))
   SAGITTAL=$(((COLUMNS+1)>>1))
@@ -73,7 +75,7 @@ test_size() {
   local -a dim
   OPT_TEST=1
   read -ra dim -p "Enter display size in {LINES} {COLUMNS} (ex: 25 80): "
-  stty_mod
+  set_con
   (( ${#dim[@]} )) || return 0
   !(( ${dim[0]} )) || !(( ${dim[1]} )) && die 'Parse Error'
   LINES=${dim[0]}
@@ -87,27 +89,27 @@ win_draw() {
   local -i m=${3:-$LINES}
   local -i n=${4:-$COLUMNS}
   local -i offset=0
-  local horz=$(echoes "\xE2\x95\x90" $((n - 2)))
-  local vert="\xE2\x95\x91\x1B[$((n-2))C\xE2\x95\x91"
-  #       Cursor origin           ╔           ═           ╗
-  printf "\x1B[${idx_y};${idx_x}H\xE2\x95\x94${horz}\xE2\x95\x97"
-  # Every line but first and last ║                       ║
-  for((;offset++<m-2;)){ printf "\x1B[$((idx_y+offset));${idx_x}H${vert}";}
-  #       Last line off window    ╚           ═           ╝
-  printf "\x1B[$((idx_y+m-1));${idx_x}H\xE2\x95\x9A${horz}\xE2\x95\x9D"
+  local horz=$(echoes "\xCD" $((n - 2)))
+  local vert="\xBA\x9B$((n-2))C\xBA"
+  #       Cursor origin and print top border
+  printf "\x9B${idx_y};${idx_x}H\xC9${horz}\xBB"
+  #       Print vertical borders on every line but first and last
+  for((;offset++<m-2;)){ printf "\x9B$((idx_y+offset));${idx_x}H${vert}";}
+  #       Print bottom border
+  printf "\x9B$((idx_y+m-1));${idx_x}H\xC8${horz}\xBC"
   #       Bound scrolling region, bring cursor into window
-  printf "\x1B[$((idx_y+1));%s" "$((idx_y+m-2))r" "$((idx_x+1))H"
-  #       Save cursor location
-  printf "\x1B[s"
+  printf "\x9B$((idx_y+1));%s" "$((idx_y+m-2))r" "$((idx_x+1))H"
+  #       Save cursor state
+  printf "\x1B7"
 }
 
 display_init() {
-  stty_sizeup
+  get_con_size
   # 2J    Clear screen
   # 31m   Foreground red
   # ?25l  Hide cursor
   # ?7l   Disable line wrapping
-  printf "\x1B[%s" 2J 31m ?25l ?7l
+  printf "\x9B%s" 2J 31m ?25l ?7l
   win_draw
 }
 
@@ -117,32 +119,34 @@ display_clean() {
   # ?7h   Disable line wrapping
   # 2J    Clear screen
   # r     Reset scrolling region
-  printf "\x1B[%s" m ?25h ?7h 2J r
+  printf "\x9B%s" m ?25h ?7h 2J r
+  # Return character set back to UTF-8
+  printf "\x1B%%G"
   # Reset stty if modified
   [[ -n "$STTY_BAK" ]] && stty $STTY_BAK
 }
 
 display_cleave() {
-  local fissure=$(echoes "\xE2\x94\x80" $((COLUMNS-2)))
+  local fissure=$(echoes "\xC4" $((COLUMNS-2)))
   # Cursor on transverse plane
-  printf "\x1B[${TRANSVERSE};H"
+  printf "\x9B${TRANSVERSE};H"
   # Grow fissure from from saggital plane laterally along transverse plane
   for ((i=0; i < SAGITTAL-1; i++)); {
-    printf "\x1B[$(( SAGITTAL - i))G\xE2\x95\x90"
-    printf "\x1B[$(( SAGITTAL + i + !(COLUMNS&1) ))G\xE2\x95\x90"
+    printf "\x9B$(( SAGITTAL - i))G\xCD"
+    printf "\x9B$(( SAGITTAL + i + !(COLUMNS&1) ))G\xCD"
     nap 0.003
   }
   # Ligate fissure
-  echoes "\xE2\x95\xAC\x0D" 2 && nap 0.1
+  echoes "\xCE\x0D" 2 && nap 0.1
   # Pilot cleavage and swap ligatures
-  printf "\xE2\x95\xA8%b" ${fissure} "\x0D\x0A"
-  printf "\xE2\x95\xA5%b" ${fissure} "\x1B[A\x0D"
+  printf "\xD0%b" ${fissure} "\n"
+  printf "\xD2%b" ${fissure} "\x9BA\x0D"
   # Widen pilot cleave if lines are odd
   # A M B L: up  delete_line  down  insert_line
-  ((LINES&1)) && printf "\x1B[%s" A M B L A
+  ((LINES&1)) && printf "\x9B%s" A M B L A
   # Continue widening
   for ((i=0; i < (TRANSVERSE>>2) - (LINES&1); i++)); {
-    printf "\x1B[%s" A M B 2L A
+    printf "\x9B%s" A M B 2L A
     nap 0.02
   }
 }
@@ -150,30 +154,31 @@ display_cleave() {
 curs_store() {
   local -n ref=$1
   local IFS='[;'
-  read -rs -d R -p $'\x1B[6n' _ ref[0] ref[1] _
+  read -rs -d R -p $'\x9B6n' _ ref[0] ref[1] _
 }
 
 curs_load() {
   local -n ref=${1}
-  printf "\x1B[%s" "${ref[0]};${ref[1]}H" 's'
+  printf "\x9B${ref[0]};${ref[1]}H"
+  printf "\x1B7"
 }
 
 exit_sequence() {
   local exit_query='Abort setup process'
   local exit_opts=('(Y|y)es' '(N|n)o')
   local -a curs
-  curs_store curs
+  #curs_store curs
   display_cleave
   # Center cursor
-  printf "\x1B[$((TRANSVERSE-(LINES&1)));${SAGITTAL}H"
+  printf "\x9B$((TRANSVERSE-(LINES&1)));${SAGITTAL}H"
   # Pad strings if columns are odd
   ((COLUMNS&1)) && exit_query+=' ' && exit_opts[0]+=' '
   # Finalise query and concatenate option strings
   exit_query+='?' && exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
   # Center and print query and option strings based on length
-  printf "\x1B[$(((${#exit_query}>>1)-!(COLUMNS&1)))D${exit_query}"
-  printf "\x1B[${SAGITTAL}G\x1B[2B"
-  printf "\x1B[$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
+  printf "\x9B$(((${#exit_query}>>1)-!(COLUMNS&1)))D${exit_query}"
+  printf "\x9B${SAGITTAL}G\x9B2B"
+  printf "\x9B$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
   # Infinite loop for confirmation
   for((;;)); {
     read "${TTIN_OPTS[@]}" -N1
@@ -185,10 +190,11 @@ exit_sequence() {
       *) continue;;
     esac
   }
-  display_init && curs_load curs
+  #display_init && curs_load curs
+  display_init
 }
 
-ttin_parse() {
+kb_in() {
   local -i str_idx=0
   local str=""
   # Infinite loop
@@ -203,36 +209,36 @@ ttin_parse() {
       [[ "${REPLY}" != "[" ]] && return 0 || read "${TTIN_OPTS[@]}" -N2
       case "${REPLY}" in
         # UP
-        A) printf "\x1B[uUP";;
+        A) printf "\x9BuUP";;
         # DOWN
-        B) printf "\x1B[uDOWN";;
+        B) printf "\x9BuDOWN";;
         # RIGHT
-        C) ((str_idx < ${#str})) && ((str_idx++)) && printf "\x1B[C";;
+        C) ((str_idx < ${#str})) && ((str_idx++)) && printf "\x9BC";;
         # LEFT
         D) ((str_idx)) && ((str_idx--)) && printf '\x08';;
         # HOME
-        '1~') ((str_idx)) && printf "\x1B[${str_idx}D" && str_idx=0;;
+        '1~') ((str_idx)) && printf "\x9B${str_idx}D" && str_idx=0;;
         # DEL
         '3~')
           # If in middle of string 
           ((str_idx != ${#str})) && {
             # Print string tail if any, erase trailing char, and reset cursor
             printf '%s' ${str:$((str_idx + 1))}
-            printf '%b' "\x20" "\x1B[$(( ${#str} - str_idx ))D"
+            printf '%b' "\x20" "\x9B$(( ${#str} - str_idx ))D"
             str=${str:0:${str_idx}}"${str:$((str_idx + 1))}"
           }
         ;;
         # END
         '4~')
           ((str_idx < ${#str})) && {
-            printf "\x1B[$(( ${#str} - str_idx ))C"
+            printf "\x9B$(( ${#str} - str_idx ))C"
             str_idx=${#str}
           }
         ;;
         # pg up
-        '5~') printf "\x1B[uPgUP";;
+        '5~') printf "\x9BuPgUP";;
         # pg down
-        '6~') printf "\x1B[uPgDOWN";;
+        '6~') printf "\x9BuPgDOWN";;
         # Do nothing
         *) :;;
       esac
@@ -249,13 +255,13 @@ ttin_parse() {
               # of whitespace (unlike when handling DEL key above) which allows
               # convenient re-use of arithmetic syntax when repositioning cursor
               printf '%s' ${str:${str_idx}}
-              printf "\x1B[%s" X "$((${#str} - str_idx))D"
+              printf "\x9B%s" X "$((${#str} - str_idx))D"
               str=${str:0:$((str_idx - 1))}"${str:${str_idx}}"
             }
             ((str_idx--))
           }
         ;;
-        $'\x0A'|$'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
+        $'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
         $'\x0E') printf "\x0F";; # Prevent activation of G1 translation table
         $'\x07'|$'\x09'|$'\x18'|$'\x1A') :;; # Ignore other C0 control codes
         *) printf "${REPLY}" && str=$str"${REPLY}" && ((str_idx++));;
@@ -269,18 +275,18 @@ keymap_handler() {
   local -a curs
   curs_store curs
   win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
-  ttin_parse
+  kb_in
   #printf "%s" ${keymaps[@]}
   curs_load curs
 }
 
 main() {
   trap 'display_clean' EXIT
-  trap 'stty_sizeup; win_draw' SIGWINCH
+  trap 'get_con_size; win_draw' SIGWINCH
   trap 'exit_sequence' SIGINT
   TTIN_OPTS=(-rs) && ((BASH_VERSINFO[0] > 3)) && TTIN_OPTS+=(-t 0.02)
   readonly TTIN_OPTS
-  [[ $1 == -d ]] && test_size || stty_mod
+  [[ $1 == -d ]] && test_size || set_con
   display_init
   keymap_handler
   exit_sequence
