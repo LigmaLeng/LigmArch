@@ -19,7 +19,7 @@
 ########################################
 
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a TTIN_OPTS
+readonly TTIN_OPTS=(-rs -t 0.02)
 readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
 
 declare -A _OPTS=(
@@ -60,8 +60,8 @@ set_con() {
   # Undefining binding for suspend signal as it breaks during reading input
   # Other options explained in stty manpage
   stty -echo -icanon -ixon -icrnl isig susp undef
-  # Select default (single byte character set)
-  printf "\x1B%%@"
+  # Select default (single byte character set) and lock G0 and G1 charsets
+  printf "\x1B%s" '%@' '(K' ')K'
 }
 
 get_con_size() {
@@ -167,8 +167,7 @@ exit_sequence() {
   local exit_query='Abort setup process'
   local exit_opts=('(Y|y)es' '(N|n)o')
   local -a curs
-  #curs_store curs
-  display_cleave
+  curs_store curs && display_cleave
   # Center cursor
   printf "\x9B$((TRANSVERSE-(LINES&1)));${SAGITTAL}H"
   # Pad strings if columns are odd
@@ -190,84 +189,112 @@ exit_sequence() {
       *) continue;;
     esac
   }
-  #display_init && curs_load curs
   display_init
+  curs_load curs
 }
 
-kb_in() {
-  local -i str_idx=0
-  local str=""
+kb_nav() {
+  local key
   # Infinite loop
   for ((;;)); {
-    read "${TTIN_OPTS[@]}" -N1
+    read "${TTIN_OPTS[@]}" -N1 key
     # Continue loop if read times out from lack of input
     (($?>128)) && continue
     # Handling escape characters
-    [[ "${REPLY}" == $'\x1B' ]] && {
+    [[ ${key} == $'\x1B' ]] && {
       read "${TTIN_OPTS[@]}" -N1
       # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
       [[ "${REPLY}" != "[" ]] && return 0 || read "${TTIN_OPTS[@]}" -N2
-      case "${REPLY}" in
-        # UP
-        A) printf "\x9BuUP";;
-        # DOWN
-        B) printf "\x9BuDOWN";;
-        # RIGHT
-        C) ((str_idx < ${#str})) && ((str_idx++)) && printf "\x9BC";;
-        # LEFT
-        D) ((str_idx)) && ((str_idx--)) && printf '\x08';;
-        # HOME
-        '1~') ((str_idx)) && printf "\x9B${str_idx}D" && str_idx=0;;
-        # DEL
-        '3~')
-          # If in middle of string 
-          ((str_idx != ${#str})) && {
-            # Print string tail if any, erase trailing char, and reset cursor
-            printf '%s' ${str:$((str_idx + 1))}
-            printf '%b' "\x20" "\x9B$(( ${#str} - str_idx ))D"
-            str=${str:0:${str_idx}}"${str:$((str_idx + 1))}"
-          }
-        ;;
-        # END
-        '4~')
-          ((str_idx < ${#str})) && {
-            printf "\x9B$(( ${#str} - str_idx ))C"
-            str_idx=${#str}
-          }
-        ;;
-        # pg up
-        '5~') printf "\x9BuPgUP";;
-        # pg down
-        '6~') printf "\x9BuPgDOWN";;
-        # Do nothing
-        *) :;;
-      esac
-      continue
-    } || {
-      case "${REPLY}" in
-        $'\x7F'|$'\x08')
-          # If index more than 0, print ANSI backspace (i.e. move cursor left)
-          ((str_idx)) && {
-            printf "\x08"
-            # If at last index, do a simple trim and space+backspace
-            ((str_idx == ${#str})) && str=${str:0:-1} && printf "\x20\x08" || {
-              # Else print string tail, and erase trailing char with CSI instead
-              # of whitespace (unlike when handling DEL key above) which allows
-              # convenient re-use of arithmetic syntax when repositioning cursor
-              printf '%s' ${str:${str_idx}}
-              printf "\x9B%s" X "$((${#str} - str_idx))D"
-              str=${str:0:$((str_idx - 1))}"${str:${str_idx}}"
-            }
-            ((str_idx--))
-          }
-        ;;
-        $'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
-        $'\x0E') printf "\x0F";; # Prevent activation of G1 translation table
-        $'\x07'|$'\x09'|$'\x18'|$'\x1A') :;; # Ignore other C0 control codes
-        *) printf "${REPLY}" && str=$str"${REPLY}" && ((str_idx++));;
-      esac
+      key=$'\x9B'${REPLY}
     }
+    case ${key} in
+      # UP
+      k|$'\x9BA') printf "\x9BuUP";;
+      # DOWN
+      j|$'\x9BB') printf "\x9BuDOWN";;
+      # RIGHT
+      l|$'\x9BC') printf "\x9BuRIGHT";;
+      # LEFT
+      h|$'\x9BD') printf "\x9BuLEFT";;
+      # HOME
+      '1~') ((str_idx)) && printf "\x9B${str_idx}D" && str_idx=0;;
+      # END
+      '4~')
+        ((str_idx < ${#str})) && {
+          printf "\x9B$(( ${#str} - str_idx ))C"
+          str_idx=${#str}
+        }
+      ;;
+      # pg up
+      '5~') printf "\x9BuPgUP";;
+      # pg down
+      '6~') printf "\x9BuPgDOWN";;
+      # Do nothing
+      *) :;;
+    esac
   }
+}
+
+kb_search() {
+  local -i str_idx=0
+  local str=""
+  case "${REPLY}" in
+    # UP
+    A) printf "\x9BuUP";;
+    # DOWN
+    B) printf "\x9BuDOWN";;
+    # RIGHT
+    C) ((str_idx < ${#str})) && ((str_idx++)) && printf "\x9BC";;
+    # LEFT
+    D) ((str_idx)) && ((str_idx--)) && printf '\x08';;
+    # HOME
+    '1~') ((str_idx)) && printf "\x9B${str_idx}D" && str_idx=0;;
+    # DEL
+    '3~')
+      # If in middle of string 
+      ((str_idx != ${#str})) && {
+        # Print string tail if any, erase trailing char, and reset cursor
+        printf '%s' ${str:$((str_idx + 1))}
+        printf '%b' "\x20" "\x9B$(( ${#str} - str_idx ))D"
+        str=${str:0:${str_idx}}"${str:$((str_idx + 1))}"
+      }
+    ;;
+    # END
+    '4~')
+      ((str_idx < ${#str})) && {
+        printf "\x9B$(( ${#str} - str_idx ))C"
+        str_idx=${#str}
+      }
+    ;;
+    # pg up
+    '5~') printf "\x9BuPgUP";;
+    # pg down
+    '6~') printf "\x9BuPgDOWN";;
+    # Do nothing
+    *) :;;
+  esac
+  case "${REPLY}" in
+    $'\x7F'|$'\x08')
+      # If index more than 0, print ANSI backspace (i.e. move cursor left)
+      ((str_idx)) && {
+        printf "\x08"
+        # If at last index, do a simple trim and space+backspace
+        ((str_idx == ${#str})) && str=${str:0:-1} && printf "\x20\x08" || {
+          # Else print string tail, and erase trailing char with CSI instead
+          # of whitespace (unlike when handling DEL key above) which allows
+          # convenient re-use of arithmetic syntax when repositioning cursor
+          printf '%s' ${str:${str_idx}}
+          printf "\x9B%s" X "$((${#str} - str_idx))D"
+          str=${str:0:$((str_idx - 1))}"${str:${str_idx}}"
+        }
+        ((str_idx--))
+      }
+    ;;
+    $'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
+    $'\x0E') printf "\x0F";; # Prevent activation of G1 translation table
+    $'\x07'|$'\x09'|$'\x18'|$'\x1A') :;; # Ignore other C0 control codes
+    *) printf "${REPLY}" && str=$str"${REPLY}" && ((str_idx++));;
+  esac
 }
 
 keymap_handler() {
@@ -275,7 +302,7 @@ keymap_handler() {
   local -a curs
   curs_store curs
   win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
-  kb_in
+  kb_nav
   #printf "%s" ${keymaps[@]}
   curs_load curs
 }
@@ -284,8 +311,6 @@ main() {
   trap 'display_clean' EXIT
   trap 'get_con_size; win_draw' SIGWINCH
   trap 'exit_sequence' SIGINT
-  TTIN_OPTS=(-rs) && ((BASH_VERSINFO[0] > 3)) && TTIN_OPTS+=(-t 0.02)
-  readonly TTIN_OPTS
   [[ $1 == -d ]] && test_size || set_con
   display_init
   keymap_handler
