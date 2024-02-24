@@ -226,9 +226,9 @@ kb_nav() {
         }
       ;;
       # pg up
-      '5~') printf "\x9BuPgUP";;
+      $'\x02'|$'\x9B5~') printf "\x9BuPgUP";;
       # pg down
-      '6~') printf "\x9BuPgDOWN";;
+      $'\x06'|$'\x9B6~') printf "\x9BuPgDOWN";;
       # Do nothing
       *) :;;
     esac
