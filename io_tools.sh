@@ -20,18 +20,28 @@
 
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 readonly TTIN_OPTS=(-rs -t 0.02)
-readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}"
+readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
+
+# https://archlinux.org/mirrorlist/all/https/
+# bootloader?
+# use swap?
+# audio
+# AUR
 
 declare -A _OPTS=(
 [keymap]="us"
+[mirror_region]=""
+[block_device]=""
 [partition_type]="linux-lvm"
-[kernel]="linux-lts"
+[kernels]="linux-lts"
 [network]="network-manager"
 [locale]="en-AU"
+[timezone]=""
 [username]=""
 [hostname]=""
 [rootpass]=""
 [userpass]=""
+[packages]=""
 )
 
 die() {

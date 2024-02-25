@@ -81,6 +81,8 @@ let mapleader=" "
 "   Navigation
 nnoremap <C-D> <C-D>zz
 nnoremap <C-U> <C-U>zz
+nnoremap <C-J> 5j
+nnoremap <C-K> 5k
 nnoremap o o<ESC>
 nnoremap O O<ESC>
 nnoremap n nzz
