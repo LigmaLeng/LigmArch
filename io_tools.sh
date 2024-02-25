@@ -1,80 +1,60 @@
 #!/usr/bin/env bash
 #
 # TODO: Write file header
-########################################
-#(INSERT FUNCTION DESCRIPTON)
-#Globals:
-#  (DELETE INCLUDING DECLARATION IF NONE)
-#  eg:
-#  BACKUP_DIR
-#  SOMEDIR
-#Arguments:
-#  None
-#Outputs:
-#  (DELETE INCLUDING DECLARATION IF NONE)
-#  eg: Writes location to stdout
-#Returns:
-#  (DELETE INCLUDING DECLARATION IF NONE)
-#  eg: 0 if thing was deleted, non-zero on error
-########################################
+#
 
+readonly READ_OPTS=(-rs -t 0.02)
+readonly TEMPLATE_DIR="$(dirname $0)/options.conf"
+readonly CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-readonly TTIN_OPTS=(-rs -t 0.02)
-readonly LIG_CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
-
+declare -a SETUP_OPTKEYS SETUP_OPTVALS
 # https://archlinux.org/mirrorlist/all/https/
 # bootloader?
 # use swap?
 # audio
 # AUR
 
-declare -A _OPTS=(
-[keymap]="us"
-[mirror_region]=""
-[block_device]=""
-[partition_type]="linux-lvm"
-[kernels]="linux-lts"
-[network]="network-manager"
-[locale]="en-AU"
-[timezone]=""
-[username]=""
-[hostname]=""
-[rootpass]=""
-[userpass]=""
-[packages]=""
-)
-
 die() {
   local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
-  display_clean
-  printf "%s: line %d: %s: %s\n" ${bash_trace[@]} "${1-Died}" >&2
-  printf "press any key to continue"
-  for((;;)){ read "${TTIN_OPTS[@]}" -N1; (($?>128)) || exit 1;}
+  printf '\x9B%s' m 2J r
+  printf '%s: line %d: %s: %s\n' ${bash_trace[@]} "${1-Died}" >&2
+  printf 'press any key to continue'
+  for((;;)){ read "${READ_OPTS[@]}" -N1; (($?>128)) || exit 1;}
 }
 
-echoes()for((i=0;i++<$2;)){ printf "$1";}
+echoes()for((i=0;i++<$2;)){ printf $1;}
 
 nap() {
-  # Reset IFS
   local IFS
-  # Open temp file descriptor if doesn't exist
-  # and pipe a whole lot of nothing into it
+  # Open file descriptor if doesn't exist pipe empty subshell
   [[ -n "${nap_fd:-}" ]] || { exec {nap_fd}<> <(:);} 2>/dev/null
   # Attempt to read from empty file descriptor indefinitely if no timeout given
   read ${1:+-t "$1"} -u $nap_fd || :
 }
 
-set_con() {
-  # Backup stty settings for cleanup on exit
+set_console() {
+  readonly LC_ALL=C
+  # Backup and modify stty settings for io operations (restored on exit)
   readonly STTY_BAK=$(stty -g)
-  # Undefining binding for suspend signal as it breaks during reading input
-  # Other options explained in stty manpage
   stty -echo -icanon -ixon -icrnl isig susp undef
   # Select default (single byte character set) and lock G0 and G1 charsets
-  printf "\x1B%s" '%@' '(K' ')K'
+  printf '\x1B%s' '%@' '(K' ')K'
 }
 
-get_con_size() {
+reset_console() {
+  # m     Reset Colours 
+  # ?25h  Show cursor
+  # ?7h   Disable line wrapping
+  # 2J    Clear screen
+  # r     Reset scrolling region
+  printf '\x9B%s' m ?25h ?7h 2J r
+  # Return character set back to UTF-8
+  printf '\x1B%%G'
+  # Reset stty if modified
+  [[ -n $STTY_BAK ]] && stty $STTY_BAK
+}
+
+get_console_size() {
   ((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
   TRANSVERSE=$(((LINES+1)>>1))
   SAGITTAL=$(((COLUMNS+1)>>1))
@@ -84,8 +64,8 @@ test_size() {
   # Temp vars as invoking stty overrides values for LINES and COLUMNS
   local -a dim
   OPT_TEST=1
-  read -ra dim -p "Enter display size in {LINES} {COLUMNS} (ex: 25 80): "
-  set_con
+  read -ra dim -p 'Enter display size in {LINES} {COLUMNS} (ex: 25 80): '
+  set_console
   (( ${#dim[@]} )) || return 0
   !(( ${dim[0]} )) || !(( ${dim[1]} )) && die 'Parse Error'
   LINES=${dim[0]}
@@ -93,13 +73,24 @@ test_size() {
   return 0
 }
 
-win_draw() {
+parse_config() {
+  while read; do
+    [[ $REPLY == '['* ]] && {
+      # Trim brackets from section headers
+      : "${REPLY#*[}" && SETUP_OPTKEYS+=("${_%]}")
+      # Replace '_' with whitespace before printing
+      printf '\x1B7%s\x1B8\x9BB' "${SETUP_OPTKEYS[-1]/_/ }"
+    }
+  done < "$TEMPLATE_DIR"
+}
+
+draw_window() {
   local -i idx_y=${1:-1}
   local -i idx_x=${2:-1}
   local -i m=${3:-$LINES}
   local -i n=${4:-$COLUMNS}
   local -i offset=0
-  local horz=$(echoes "\xCD" $((n - 2)))
+  local horz=$(echoes '\xCD' $((n - 2)))
   local vert="\xBA\x9B$((n-2))C\xBA"
   #       Cursor origin and print top border
   printf "\x9B${idx_y};${idx_x}H\xC9${horz}\xBB"
@@ -108,36 +99,29 @@ win_draw() {
   #       Print bottom border
   printf "\x9B$((idx_y+m-1));${idx_x}H\xC8${horz}\xBC"
   #       Bound scrolling region, bring cursor into window
-  printf "\x9B$((idx_y+1));%s" "$((idx_y+m-2))r" "$((idx_x+1))H"
+  printf "\x9B$((idx_y+1));%s" $((idx_y+m-2))r $((idx_x+1))H
   #       Save cursor state
-  printf "\x1B7"
+  printf '\x1B7'
+}
+
+draw_menu() {
+  local -i optkey_maxlen=0
+  draw_window
+  parse_config
 }
 
 display_init() {
-  get_con_size
+  get_console_size
   # 2J    Clear screen
   # 31m   Foreground red
   # ?25l  Hide cursor
   # ?7l   Disable line wrapping
-  printf "\x9B%s" 2J 31m ?25l ?7l
-  win_draw
-}
-
-display_clean() {
-  # m     Reset Colours 
-  # ?25h  Show cursor
-  # ?7h   Disable line wrapping
-  # 2J    Clear screen
-  # r     Reset scrolling region
-  printf "\x9B%s" m ?25h ?7h 2J r
-  # Return character set back to UTF-8
-  printf "\x1B%%G"
-  # Reset stty if modified
-  [[ -n "$STTY_BAK" ]] && stty $STTY_BAK
+  printf '\x9B%s' 2J 31m ?25l ?7l
+  draw_menu
 }
 
 display_cleave() {
-  local fissure=$(echoes "\xC4" $((COLUMNS-2)))
+  local fissure=$(echoes '\xC4' $((COLUMNS-2)))
   # Cursor on transverse plane
   printf "\x9B${TRANSVERSE};H"
   # Grow fissure from from saggital plane laterally along transverse plane
@@ -147,16 +131,16 @@ display_cleave() {
     nap 0.003
   }
   # Ligate fissure
-  echoes "\xCE\x0D" 2 && nap 0.1
+  echoes '\xCE\x0D' 2 && nap 0.1
   # Pilot cleavage and swap ligatures
-  printf "\xD0%b" ${fissure} "\n"
-  printf "\xD2%b" ${fissure} "\x9BA\x0D"
+  printf '\xD0%b' ${fissure} '\n'
+  printf '\xD2%b' ${fissure} '\x9BA\x0D'
   # Widen pilot cleave if lines are odd
   # A M B L: up  delete_line  down  insert_line
-  ((LINES&1)) && printf "\x9B%s" A M B L A
+  ((LINES&1)) && printf '\x9B%s' A M B L A
   # Continue widening
   for ((i=0; i < (TRANSVERSE>>2) - (LINES&1); i++)); {
-    printf "\x9B%s" A M B 2L A
+    printf '\x9B%s' A M B 2L A
     nap 0.02
   }
 }
@@ -170,10 +154,10 @@ curs_store() {
 curs_load() {
   local -n ref=${1}
   printf "\x9B${ref[0]};${ref[1]}H"
-  printf "\x1B7"
+  printf '\x1B7'
 }
 
-exit_sequence() {
+exit_prompt() {
   local exit_query='Abort setup process'
   local exit_opts=('(Y|y)es' '(N|n)o')
   local -a curs
@@ -186,35 +170,34 @@ exit_sequence() {
   exit_query+='?' && exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
   # Center and print query and option strings based on length
   printf "\x9B$(((${#exit_query}>>1)-!(COLUMNS&1)))D${exit_query}"
-  printf "\x9B${SAGITTAL}G\x9B2B"
+  printf '\x9B%s' ${SAGITTAL}G 2B
   printf "\x9B$(((${#exit_opts}>>1)-!(COLUMNS&1)))D${exit_opts}"
   # Infinite loop for confirmation
   for((;;)); {
-    read "${TTIN_OPTS[@]}" -N1
+    read "${READ_OPTS[@]}" -N1
     # Continue loop if timed out
     (($?>128)) && continue
-    case "${REPLY}" in
+    case "$REPLY" in
       Y|y) exit 0;;
       N|n) break;;
       *) continue;;
     esac
   }
-  display_init
-  curs_load curs
+  display_init && curs_load curs
 }
 
 kb_nav() {
   local key
   # Infinite loop
   for ((;;)); {
-    read "${TTIN_OPTS[@]}" -N1 key
+    read "${READ_OPTS[@]}" -N1 key
     # Continue loop if read times out from lack of input
     (($?>128)) && continue
     # Handling escape characters
     [[ ${key} == $'\x1B' ]] && {
-      read "${TTIN_OPTS[@]}" -N1
+      read "${READ_OPTS[@]}" -N1
       # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
-      [[ "${REPLY}" != "[" ]] && return 0 || read "${TTIN_OPTS[@]}" -N2
+      [[ "${REPLY}" != "[" ]] && return 0 || read "${READ_OPTS[@]}" -N2
       key=$'\x9B'${REPLY}
     }
     case ${key} in
@@ -311,19 +294,20 @@ keymap_handler() {
   local keymaps=($(localectl list-keymaps))
   local -a curs
   curs_store curs
-  win_draw 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
+  draw_window 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
   kb_nav
   #printf "%s" ${keymaps[@]}
   curs_load curs
 }
 
 main() {
-  trap 'display_clean' EXIT
-  trap 'get_con_size; win_draw' SIGWINCH
-  trap 'exit_sequence' SIGINT
-  [[ $1 == -d ]] && test_size || set_con
+  trap 'reset_console' EXIT
+  trap 'get_console_size; draw_window' SIGWINCH
+  trap 'exit_prompt' SIGINT
+  [[ $1 == -d ]] && test_size || set_console
   display_init
-  keymap_handler
-  exit_sequence
+  nap 2
+  #keymap_handler
+  exit_prompt
 }
 main "$@"
