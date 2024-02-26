@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
 # TODO: Write file header
-#
 
-readonly READ_OPTS=(-rs -t 0.02)
-readonly TEMPLATE_DIR="$(dirname $0)/options.conf"
+[[ ${0%/*} == ${0} ]] && readonly CTX_DIR='.' || readonly CTX_DIR=${0%/*}
 readonly CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
+readonly TEMPLATE_DIR="${CTX_DIR}/options.conf"
+readonly READ_OPTS=(-rs -t 0.02)
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a SETUP_OPTKEYS
-declare -A SETUP_OPTS
+declare -A SETUP_OPTS USER_OPTS
+declare -a SETUP_OPTKEYS KEYMAP_FILES
 # https://archlinux.org/mirrorlist/all/https/
 # bootloader?
 # use swap?
@@ -74,7 +74,8 @@ test_size() {
   return 0
 }
 
-parse_config() {
+parse_files() {
+  # Parse config template file
   while read; do
     case $REPLY in
       # Trim brackets from section headers
@@ -89,6 +90,16 @@ parse_config() {
         done
     esac
   done < "$TEMPLATE_DIR"
+  # Parse kbd keymap files
+  for i in /usr/share/kbd/keymaps/**/*.map.gz; do
+    : "${i##*/}"
+    : "${_%.map.gz}"
+    KEYMAP_FILES+=("$_")
+  done
+  # Parse supported locales
+  while read; do
+    echo $REPLY
+  done < "/usr/share/i18n/SUPPORTED"
 }
 
 draw_window() {
@@ -114,7 +125,6 @@ draw_window() {
 draw_menu() {
   local -i max_len=0
   draw_window
-  parse_config
   for i in ${SETUP_OPTKEYS[@]};{ ((max_len=${#i}>max_len?${#i}:max_len));}
   for i in ${SETUP_OPTKEYS[@]}; do
     printf "\x1B7${i/_/ }\x1B8\x9B$((max_len+3))C${SETUP_OPTS[$i]}\x1B8\x9BB"
@@ -302,23 +312,24 @@ kb_search() {
 }
 
 keymap_handler() {
-  local keymaps=($(localectl list-keymaps))
+  printf '%s\n' "${KEYMAP_FILES[@]}"
   local -a curs
-  curs_store curs
-  draw_window 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
-  kb_nav
+  #curs_store curs
+  #draw_window 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
+  #kb_nav
   #printf "%s" ${keymaps[@]}
-  curs_load curs
+  #curs_load curs
 }
 
 main() {
   trap 'reset_console' EXIT
   trap 'get_console_size; draw_window' SIGWINCH
   trap 'exit_prompt' SIGINT
+  shopt -s globstar
   [[ $1 == -d ]] && test_size || set_console
-  display_init
-  nap 2
+  parse_files
+  #display_init
   #keymap_handler
-  exit_prompt
+  #exit_prompt
 }
 main "$@"
