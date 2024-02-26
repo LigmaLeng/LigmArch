@@ -7,7 +7,8 @@ readonly READ_OPTS=(-rs -t 0.02)
 readonly TEMPLATE_DIR="$(dirname $0)/options.conf"
 readonly CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a SETUP_OPTKEYS SETUP_OPTVALS
+declare -a SETUP_OPTKEYS
+declare -A SETUP_OPTS
 # https://archlinux.org/mirrorlist/all/https/
 # bootloader?
 # use swap?
@@ -75,12 +76,18 @@ test_size() {
 
 parse_config() {
   while read; do
-    [[ $REPLY == '['* ]] && {
+    case $REPLY in
       # Trim brackets from section headers
-      : "${REPLY#*[}" && SETUP_OPTKEYS+=("${_%]}")
-      # Replace '_' with whitespace before printing
-      printf '\x1B7%s\x1B8\x9BB' "${SETUP_OPTKEYS[-1]/_/ }"
-    }
+      '['*) : "${REPLY#[}" && SETUP_OPTKEYS+=("${_%]}");;
+      value*) SETUP_OPTS[${SETUP_OPTKEYS[-1]}]=${REPLY#*= };;
+      list*)
+        read SETUP_OPTS[${SETUP_OPTKEYS[-1]}]
+        while read; do
+          [[ -z $REPLY ]] && break || {
+            SETUP_OPTS[${SETUP_OPTKEYS[-1]}]+=" ${REPLY//[[:space:]]}"
+          }
+        done
+    esac
   done < "$TEMPLATE_DIR"
 }
 
@@ -105,9 +112,13 @@ draw_window() {
 }
 
 draw_menu() {
-  local -i optkey_maxlen=0
+  local -i max_len=0
   draw_window
   parse_config
+  for i in ${SETUP_OPTKEYS[@]};{ ((max_len=${#i}>max_len?${#i}:max_len));}
+  for i in ${SETUP_OPTKEYS[@]}; do
+    printf "\x1B7${i/_/ }\x1B8\x9B$((max_len+3))C${SETUP_OPTS[$i]}\x1B8\x9BB"
+  done
 }
 
 display_init() {
