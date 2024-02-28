@@ -6,9 +6,9 @@
 readonly CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
 readonly TEMPLATE_DIR="${CTX_DIR}/options.conf"
 readonly READ_OPTS=(-rs -t 0.02)
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -A SETUP_OPTS USER_OPTS
-declare -a SETUP_OPTKEYS KEYMAP_FILES
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL OPTKEY_SPACE
+declare -a SETUP_OPTKEYS KEYMAP_FILES SUPPORTED_LOCALES
+declare -A setup_optkeys_f setup_opts user_opts
 # https://archlinux.org/mirrorlist/all/https/
 # bootloader?
 # use swap?
@@ -75,21 +75,31 @@ test_size() {
 }
 
 parse_files() {
+  OPTKEY_SPACE=0
   # Parse config template file
   while read; do
     case $REPLY in
       # Trim brackets from section headers
-      '['*) : "${REPLY#[}" && SETUP_OPTKEYS+=("${_%]}");;
-      value*) SETUP_OPTS[${SETUP_OPTKEYS[-1]}]=${REPLY#*= };;
+      '['*)
+        : "${REPLY#[}"
+        SETUP_OPTKEYS+=("${_%]}")
+        : ${#SETUP_OPTKEYS[-1]}
+        ((OPTKEY_SPACE=$_>OPTKEY_SPACE?$_:$OPTKEY_SPACE))
+      ;;
+      value*)
+        setup_opts[${SETUP_OPTKEYS[-1]}]=${REPLY#*= }
+      ;;
       list*)
-        read SETUP_OPTS[${SETUP_OPTKEYS[-1]}]
+        read setup_opts[${SETUP_OPTKEYS[-1]}]
         while read; do
           [[ -z $REPLY ]] && break || {
-            SETUP_OPTS[${SETUP_OPTKEYS[-1]}]+=" ${REPLY//[[:space:]]}"
+            setup_opts[${SETUP_OPTKEYS[-1]}]+=" ${REPLY//[[:space:]]}"
           }
         done
+      ;;
     esac
   done < "$TEMPLATE_DIR"
+  readonly OPTKEY_SPACE+=3
   # Parse kbd keymap files
   for i in /usr/share/kbd/keymaps/**/*.map.gz; do
     : "${i##*/}"
@@ -98,7 +108,7 @@ parse_files() {
   done
   # Parse supported locales
   while read; do
-    echo $REPLY
+    SUPPORTED_LOCALES+=("$REPLY")
   done < "/usr/share/i18n/SUPPORTED"
 }
 
@@ -117,18 +127,21 @@ draw_window() {
   #       Print bottom border
   printf "\x9B$((idx_y+m-1));${idx_x}H\xC8${horz}\xBC"
   #       Bound scrolling region, bring cursor into window
-  printf "\x9B$((idx_y+1));%s" $((idx_y+m-2))r $((idx_x+1))H
+  printf "\x9B$((idx_y+1));%s" $((idx_y+m-2))r $((idx_x+2))H
   #       Save cursor state
   printf '\x1B7'
 }
 
 draw_menu() {
   local -i max_len=0
+  local -a curs
   draw_window
-  for i in ${SETUP_OPTKEYS[@]};{ ((max_len=${#i}>max_len?${#i}:max_len));}
+  curs_store curs
   for i in ${SETUP_OPTKEYS[@]}; do
-    printf "\x1B7${i/_/ }\x1B8\x9B$((max_len+3))C${SETUP_OPTS[$i]}\x1B8\x9BB"
+    printf "\x1B7${i/_/ }\x1B8\x9B$((OPTKEY_SPACE))C${setup_opts[$i]}\x1B8\x9BB"
   done
+  curs_load curs
+  kb_nav SETUP_OPTKEYS
 }
 
 display_init() {
@@ -138,7 +151,6 @@ display_init() {
   # ?25l  Hide cursor
   # ?7l   Disable line wrapping
   printf '\x9B%s' 2J 31m ?25l ?7l
-  draw_menu
 }
 
 display_cleave() {
@@ -209,7 +221,9 @@ exit_prompt() {
 
 kb_nav() {
   local key
-  # Infinite loop
+  local ref=$1
+  #printf "\x1B7${i/_/ }\x1B8$(echoes '\x20' $((max_len+3)))${setup_opts[$i]}\x1B8\x9BB"
+  printf '\xAF \x9B7m%s\x1B8\x1B7' ${ref[0]}
   for ((;;)); {
     read "${READ_OPTS[@]}" -N1 key
     # Continue loop if read times out from lack of input
@@ -321,6 +335,12 @@ keymap_handler() {
   #curs_load curs
 }
 
+locale_handler() {
+  for ((i=0;i++<${#SUPPORTED_LOCALES[@]};)); do
+    printf '%s\n' "${SUPPORTED_LOCALES[$i]}"
+  done
+}
+
 main() {
   trap 'reset_console' EXIT
   trap 'get_console_size; draw_window' SIGWINCH
@@ -328,7 +348,8 @@ main() {
   shopt -s globstar
   [[ $1 == -d ]] && test_size || set_console
   parse_files
-  #display_init
+  display_init
+  draw_menu
   #keymap_handler
   #exit_prompt
 }
