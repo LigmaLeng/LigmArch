@@ -100,13 +100,8 @@ parse_files() {
     esac
   done < "$TEMPLATE_DIR"
   readonly OPTKEY_SPACE+=3
-  # Parse kbd keymap files
-  for i in /usr/share/kbd/keymaps/**/*.map.gz; do
-    : "${i##*/}"
-    : "${_%.map.gz}"
-    KEYMAP_FILES+=("$_")
-  done
-  # Parse supported locales
+  # Get kbd keymap files and parse supported locales
+  KEYMAP_FILES=($(localectl list-keymaps))
   while read; do
     SUPPORTED_LOCALES+=("$REPLY")
   done < "/usr/share/i18n/SUPPORTED"
@@ -348,9 +343,10 @@ main() {
   shopt -s globstar
   [[ $1 == -d ]] && test_size || set_console
   parse_files
-  display_init
-  draw_menu
-  #keymap_handler
+  #display_init
+  #draw_menu
+  keymap_handler
+  nap 1
   #exit_prompt
 }
 main "$@"
