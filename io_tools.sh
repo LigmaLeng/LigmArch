@@ -6,9 +6,9 @@
 readonly CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
 readonly TEMPLATE_DIR="${CTX_DIR}/options.conf"
 readonly READ_OPTS=(-rs -t 0.02)
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL OPTKEY_SPACE
-declare -a SETUP_OPTKEYS KEYMAP_FILES SUPPORTED_LOCALES
-declare -A setup_optkeys_f setup_opts user_opts
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL
+declare -a SETUP_OPTKEYS setup_opts_f KEYMAP_FILES SUPPORTED_LOCALES
+declare -A setup_opts user_opts
 # https://archlinux.org/mirrorlist/all/https/
 # bootloader?
 # use swap?
@@ -37,7 +37,7 @@ set_console() {
   readonly LC_ALL=C
   # Backup and modify stty settings for io operations (restored on exit)
   readonly STTY_BAK=$(stty -g)
-  stty -echo -icanon -ixon -icrnl isig susp undef
+  stty -echo -icanon -ixon icrnl isig susp undef
   # Select default (single byte character set) and lock G0 and G1 charsets
   printf '\x1B%s' '%@' '(K' ')K'
 }
@@ -75,7 +75,7 @@ test_size() {
 }
 
 parse_files() {
-  OPTKEY_SPACE=0
+  local -i optsp=0
   # Parse config template file
   while read; do
     case $REPLY in
@@ -83,8 +83,7 @@ parse_files() {
       '['*)
         : "${REPLY#[}"
         SETUP_OPTKEYS+=("${_%]}")
-        : ${#SETUP_OPTKEYS[-1]}
-        ((OPTKEY_SPACE=$_>OPTKEY_SPACE?$_:$OPTKEY_SPACE))
+        ((optsp=${#SETUP_OPTKEYS[-1]}>optsp?${#SETUP_OPTKEYS[-1]}:$optsp))
       ;;
       value*)
         setup_opts[${SETUP_OPTKEYS[-1]}]=${REPLY#*= }
@@ -99,7 +98,10 @@ parse_files() {
       ;;
     esac
   done < "$TEMPLATE_DIR"
-  readonly OPTKEY_SPACE+=3
+  # Format optkey spacing for prints
+  for i in ${SETUP_OPTKEYS[@]}; do
+    setup_opts_f+=("${i/_/ }$(echoes '\x20' $((optsp-${#i}+3)))")
+  done
   # Get kbd keymap files and parse supported locales
   KEYMAP_FILES=($(localectl list-keymaps))
   while read; do
@@ -128,15 +130,15 @@ draw_window() {
 }
 
 draw_menu() {
-  local -i max_len=0
   local -a curs
   draw_window
   curs_store curs
-  for i in ${SETUP_OPTKEYS[@]}; do
-    printf "\x1B7${i/_/ }\x1B8\x9B$((OPTKEY_SPACE))C${setup_opts[$i]}\x1B8\x9BB"
+  for ((i=0;i<${#SETUP_OPTKEYS[@]};i++)); do
+    setup_opts_f[$i]="${setup_opts_f[$i]}${setup_opts[${SETUP_OPTKEYS[$i]}]}"
+    printf "\x1B7  ${setup_opts_f[$i]}\x1B8\x9BB"
   done
   curs_load curs
-  kb_nav SETUP_OPTKEYS
+  kb_nav setup_opts_f
 }
 
 display_init() {
@@ -216,9 +218,10 @@ exit_prompt() {
 
 kb_nav() {
   local key
-  local ref=$1
-  #printf "\x1B7${i/_/ }\x1B8$(echoes '\x20' $((max_len+3)))${setup_opts[$i]}\x1B8\x9BB"
-  printf '\xAF \x9B7m%s\x1B8\x1B7' ${ref[0]}
+  local -n ref=$1
+  local -i row=0
+  local -ir rows=${#ref[@]}
+  printf '\xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
   for ((;;)); {
     read "${READ_OPTS[@]}" -N1 key
     # Continue loop if read times out from lack of input
@@ -232,28 +235,37 @@ kb_nav() {
     }
     case ${key} in
       # UP
-      k|$'\x9BA') printf "\x9BuUP";;
+      k|$'\x9BA')
+        ((row)) && {
+          printf '  %s\x1B8\x9BA\x1B7' "${ref[$((row--))]}"
+          printf '\xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
+        }
+      ;;
       # DOWN
-      j|$'\x9BB') printf "\x9BuDOWN";;
+      j|$'\x9BB')
+        ((row+1<rows)) && {
+          printf '  %s\x1B8\x9BB\x1B7' "${ref[$((row++))]}"
+          printf '\xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
+        }
+      ;;
+      $'\n') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
       # RIGHT
       l|$'\x9BC') printf "\x9BuRIGHT";;
       # LEFT
       h|$'\x9BD') printf "\x9BuLEFT";;
       # HOME
-      '1~') ((str_idx)) && printf "\x9B${str_idx}D" && str_idx=0;;
+      #'1~') ((str_idx)) && printf "\x9B${str_idx}D" && str_idx=0;;
       # END
-      '4~')
-        ((str_idx < ${#str})) && {
-          printf "\x9B$(( ${#str} - str_idx ))C"
-          str_idx=${#str}
-        }
-      ;;
+      #'4~')
+        #((str_idx < ${#str})) && {
+          #printf "\x9B$(( ${#str} - str_idx ))C"
+          #str_idx=${#str}
+        #}
+      #;;
       # pg up
-      $'\x02'|$'\x9B5~') printf "\x9BuPgUP";;
+      #$'\x02'|$'\x9B5~') printf "\x9BuPgUP";;
       # pg down
-      $'\x06'|$'\x9B6~') printf "\x9BuPgDOWN";;
-      # Do nothing
-      *) :;;
+      #$'\x06'|$'\x9B6~') printf "\x9BuPgDOWN";;
     esac
   }
 }
@@ -340,13 +352,12 @@ main() {
   trap 'reset_console' EXIT
   trap 'get_console_size; draw_window' SIGWINCH
   trap 'exit_prompt' SIGINT
-  shopt -s globstar
   [[ $1 == -d ]] && test_size || set_console
   parse_files
-  #display_init
-  #draw_menu
-  keymap_handler
-  nap 1
+  display_init
+  draw_menu
+  nap 2
+  #keymap_handler
   #exit_prompt
 }
 main "$@"
