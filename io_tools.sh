@@ -79,10 +79,12 @@ parse_files() {
   # Parse config template file
   while read; do
     case $REPLY in
-      # Trim brackets from section headers
+      # Section header
       '['*)
+        # Trim brackets
         : "${REPLY#[}"
         SETUP_OPTKEYS+=("${_%]}")
+        # Keep track of longest optkey
         ((optsp=${#SETUP_OPTKEYS[-1]}>optsp?${#SETUP_OPTKEYS[-1]}:$optsp))
       ;;
       value*)
@@ -124,21 +126,30 @@ draw_window() {
   #       Print bottom border
   printf "\x9B$((idx_y+m-1));${idx_x}H\xC8${horz}\xBC"
   #       Bound scrolling region, bring cursor into window
-  printf "\x9B$((idx_y+1));%s" $((idx_y+m-2))r $((idx_x+2))H
+  printf "\x9B$((idx_y+1));%s" $((idx_y+m-2))r $((idx_x+1))H
   #       Save cursor state
   printf '\x1B7'
 }
 
 draw_menu() {
-  local -a curs
   draw_window
-  curs_store curs
   for ((i=0;i<${#SETUP_OPTKEYS[@]};i++)); do
     setup_opts_f[$i]="${setup_opts_f[$i]}${setup_opts[${SETUP_OPTKEYS[$i]}]}"
-    printf "\x1B7  ${setup_opts_f[$i]}\x1B8\x9BB"
   done
+  kb_nav setup_opts_f $((LINES-2))
+}
+
+draw_select() {
+  local -i optkey_idx=$1
+  local -a curs
+  curs_store curs
+  draw_window 2 $SAGITTAL $((LINES-2)) $((SAGITTAL-1))
+  case ${optkey_idx} in
+    0) : "KEYMAP_FILES";;
+    2) : "SUPPORTED_LOCALES";;
+  esac
+  kb_nav $_ $((LINES-4))
   curs_load curs
-  kb_nav setup_opts_f
 }
 
 display_init() {
@@ -221,7 +232,15 @@ kb_nav() {
   local -n ref=$1
   local -i row=0
   local -ir rows=${#ref[@]}
-  printf '\xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
+  local -ir lim=$2
+  local -a curs
+  curs_store curs
+  printf ' \xAF \x9B7m%s\x1B8\x9BB' "${ref[$row]}"
+  for ((i=1;i<rows;i++)); do
+    ((i==lim)) && break
+    printf "\x1B7   ${ref[$i]}\x1B8\x9BB"
+  done
+  curs_load curs
   for ((;;)); {
     read "${READ_OPTS[@]}" -N1 key
     # Continue loop if read times out from lack of input
@@ -237,18 +256,22 @@ kb_nav() {
       # UP
       k|$'\x9BA')
         ((row)) && {
-          printf '  %s\x1B8\x9BA\x1B7' "${ref[$((row--))]}"
-          printf '\xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
+          printf '   %s\x1B8\x9BA\x1B7' "${ref[$((row--))]}"
+          printf ' \xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
         }
       ;;
       # DOWN
       j|$'\x9BB')
-        ((row+1<rows)) && {
-          printf '  %s\x1B8\x9BB\x1B7' "${ref[$((row++))]}"
-          printf '\xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
+        ((row+1<rows)) && ((row+1<lim)) && {
+          printf '   %s\x1B8\x9BB\x1B7' "${ref[$((row++))]}"
+          printf ' \xAF \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
         }
       ;;
-      $'\n') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
+      $'\n') 
+        printf '   \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
+        draw_select $row
+      ;;
+      $'\x20') echo 'space';;
       # RIGHT
       l|$'\x9BC') printf "\x9BuRIGHT";;
       # LEFT
@@ -268,68 +291,6 @@ kb_nav() {
       #$'\x06'|$'\x9B6~') printf "\x9BuPgDOWN";;
     esac
   }
-}
-
-kb_search() {
-  local -i str_idx=0
-  local str=""
-  case "${REPLY}" in
-    # UP
-    A) printf "\x9BuUP";;
-    # DOWN
-    B) printf "\x9BuDOWN";;
-    # RIGHT
-    C) ((str_idx < ${#str})) && ((str_idx++)) && printf "\x9BC";;
-    # LEFT
-    D) ((str_idx)) && ((str_idx--)) && printf '\x08';;
-    # HOME
-    '1~') ((str_idx)) && printf "\x9B${str_idx}D" && str_idx=0;;
-    # DEL
-    '3~')
-      # If in middle of string 
-      ((str_idx != ${#str})) && {
-        # Print string tail if any, erase trailing char, and reset cursor
-        printf '%s' ${str:$((str_idx + 1))}
-        printf '%b' "\x20" "\x9B$(( ${#str} - str_idx ))D"
-        str=${str:0:${str_idx}}"${str:$((str_idx + 1))}"
-      }
-    ;;
-    # END
-    '4~')
-      ((str_idx < ${#str})) && {
-        printf "\x9B$(( ${#str} - str_idx ))C"
-        str_idx=${#str}
-      }
-    ;;
-    # pg up
-    '5~') printf "\x9BuPgUP";;
-    # pg down
-    '6~') printf "\x9BuPgDOWN";;
-    # Do nothing
-    *) :;;
-  esac
-  case "${REPLY}" in
-    $'\x7F'|$'\x08')
-      # If index more than 0, print ANSI backspace (i.e. move cursor left)
-      ((str_idx)) && {
-        printf "\x08"
-        # If at last index, do a simple trim and space+backspace
-        ((str_idx == ${#str})) && str=${str:0:-1} && printf "\x20\x08" || {
-          # Else print string tail, and erase trailing char with CSI instead
-          # of whitespace (unlike when handling DEL key above) which allows
-          # convenient re-use of arithmetic syntax when repositioning cursor
-          printf '%s' ${str:${str_idx}}
-          printf "\x9B%s" X "$((${#str} - str_idx))D"
-          str=${str:0:$((str_idx - 1))}"${str:${str_idx}}"
-        }
-        ((str_idx--))
-      }
-    ;;
-    $'\x0D') echo "ent";; # stty set to icrnl; ENTER=Linefeed/newline
-    $'\x0E') printf "\x0F";; # Prevent activation of G1 translation table
-    $'\x07'|$'\x09'|$'\x18'|$'\x1A') :;; # Ignore other C0 control codes
-    *) printf "${REPLY}" && str=$str"${REPLY}" && ((str_idx++));;
-  esac
 }
 
 keymap_handler() {
