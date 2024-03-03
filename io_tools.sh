@@ -6,7 +6,7 @@
 readonly CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}"
 readonly TEMPLATE_DIR="${CTX_DIR}/options.conf"
 readonly READ_OPTS=(-rs -t 0.02)
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL EXIT_STATE
 declare -a SETUP_OPTKEYS setup_opts_f KEYMAP_FILES SUPPORTED_LOCALES
 declare -A setup_opts user_opts
 # https://archlinux.org/mirrorlist/all/https/
@@ -199,6 +199,8 @@ curs_load() {
 }
 
 exit_prompt() {
+  ((EXIT_STATE)) && return
+  EXIT_STATE=1
   local exit_query='Abort setup process'
   local exit_opts=('(Y|y)es' '(N|n)o')
   local -a curs
@@ -224,7 +226,7 @@ exit_prompt() {
       *) continue;;
     esac
   }
-  display_init && curs_load curs
+  EXIT_STATE=0 && display_init && curs_load curs
 }
 
 kb_nav() {
