@@ -246,10 +246,10 @@ kb_nav() {
   local -ir linelim_hi=$((linelim_lo+pglim-1))
   local -a curs
   curs_store curs
-  printf ' \xAF \x9B7m%s\x1B8\x9BB' "${ref[$row]}"
+  printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$row]}"
   for ((i=0;++i<rows;)); do
     ((i==pglim)) && break
-    printf "\x1B7   ${ref[$i]}\x1B8\x9BB"
+    printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
   done
   curs_load curs
   for ((;;)); {
@@ -270,17 +270,17 @@ kb_nav() {
         ((row)) && {
           # If cursor on first line of window
           (($(get_line)==linelim_lo)) && {
-            printf ' \xAF \x9B7m%s\x9B27m' "${ref[$((--row))]}"
+            printf '\xAF \x9B7m%s\x9B27m' "${ref[$((--row))]}"
             printf "$(echoes '\x20' $((${#ref[row+1]}-${#ref[row]})))\x1B8\x9BB"
             for ((i=0;++i<pglim;)); do
-              printf '\x1B7   %s' "${ref[$((row+i))]}"
+              printf '\x1B7  %s' "${ref[$((row+i))]}"
               printf "$(echoes '\x20' $((${#ref[row+i+1]}-${#_})))\x1B8\x9BB"
             done
             curs_load curs
           } || {
           # 
-            printf '   %s\x1B8\x9BA\x1B7' "${ref[$((row--))]}"
-            printf ' \xAF \x9B7m%s\x1B8' "${ref[$row]}"
+            printf '  %s\x1B8\x9BA\x1B7' "${ref[$((row--))]}"
+            printf '\xAF \x9B7m%s\x1B8' "${ref[$row]}"
           }
         }
       ;;
@@ -295,22 +295,22 @@ kb_nav() {
             # Reprinting elements because linefeeding affects other windows
             # and default virtual console doesn't store scrolling input anyways
             for ((i=row-pglim+2;i<row+1;i++)); do
-              printf "\x1B7   ${ref[$i]}"
+              printf "\x1B7  ${ref[$i]}"
               # Use whitespace to erase trailing characters
               printf "$(echoes '\x20' $((${#ref[i-1]}-${#ref[i]})))\x1B8\x9BB"
             done
             # Format and print line on target cursor
-            printf '\x1B7 \xAF \x9B7m%s\x9B27m' "${ref[$((++row))]}"
+            printf '\x1B7\xAF \x9B7m%s\x9B27m' "${ref[$((++row))]}"
             printf "$(echoes '\x20' $((${#ref[row-1]}-${#ref[row]})))\x1B8"
           } || {
           # Else reprint line without reverse attributes before next line
-            printf '   %s\x1B8\x9BB\x1B7' "${ref[$((row++))]}"
-            printf ' \xAF \x9B7m%s\x1B8' "${ref[$row]}"
+            printf '  %s\x1B8\x9BB\x1B7' "${ref[$((row++))]}"
+            printf '\xAF \x9B7m%s\x1B8' "${ref[$row]}"
           }
         }
       ;;
       $'\n') 
-        printf '   \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
+        printf '  \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
         draw_select $row
       ;;
       $'\x20') echo 'space';;
@@ -323,18 +323,23 @@ kb_nav() {
         curs_load curs
         # Erasing whole window is easier without relative index references
         for ((i=0;i++<pglim;)); do
-          printf "$(echoes '\x20' $((COLUMNS-curs[1]-linelim_lo-1)))"
+          printf "$(echoes '\x20' $((COLUMNS-curs[1]-linelim_lo+1)))"
           printf "\x1B8\x9BB\x1B7"
-        done
-        curs_load curs
-        [[ ${key}==$'\x9B1~' ]] && {
+        done && curs_load curs
+        [[ ${key} == $'\x9B1~' ]] && {
           # Reprint options similar to when entering function
-          ((row=0)) || printf ' \xAF \x9B7m%s\x1B8\x9BB' "${ref[$row]}"
-          for ((i=0;++i<rows;)); do
+          printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((row=0))]}"
+          for ((i=row;++i<rows;)); do
             ((i==pglim)) && break
-            printf "\x1B7   ${ref[$i]}\x1B8\x9BB"
+            printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
+          done && curs_load curs
+        } || {
+          ((rows>pglim)) && ((row=rows-pglim-1)) || ((row=-1))
+          for ((row;++row<rows;)); do
+            (($(get_line)>linelim_hi)) && break
+            printf "\x1B7  ${ref[$row]}\x1B8\x9BB"
           done
-          curs_load curs
+          printf '\x1B8\xAF \x9B7m%s\x1B8' "${ref[$((--row))]}"
         }
       ;;
       #'4~')
