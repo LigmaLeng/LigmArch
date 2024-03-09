@@ -136,7 +136,7 @@ draw_menu() {
   for ((i=0;i<${#SETUP_OPTKEYS[@]};i++)); do
     setup_opts_f[$i]="${setup_opts_f[$i]}${setup_opts[${SETUP_OPTKEYS[$i]}]}"
   done
-  kb_nav setup_opts_f $((LINES-2))
+  kb_nav setup_opts_f $((LINES-2)) $((COLUMNS-2))
 }
 
 draw_select() {
@@ -148,7 +148,7 @@ draw_select() {
     0) : "KEYMAP_FILES";;
     2) : "SUPPORTED_LOCALES";;
   esac
-  kb_nav $_ $((LINES-4))
+  kb_nav $_ $((LINES-4)) $((SAGITTAL-3))
   curs_load curs
 }
 
@@ -239,16 +239,18 @@ exit_prompt() {
 kb_nav() {
   local key
   local -n ref=$1
-  local -i row=0
   local -ir rows=${#ref[@]}
-  local -ir pglim=$2
-  local -ir linelim_lo=$(((LINES-pglim>>1)+1))
-  local -ir linelim_hi=$((linelim_lo+pglim-1))
+  local -ir dim_y=$2
+  local -ir dim_x=$3
+  local -r white_sp=$(echoes '\x20' $dim_x)
+  local -ir lim_y_lo=$(((LINES-dim_y>>1)+1))
+  local -ir lim_y_hi=$((lim_y_lo+dim_y-1))
   local -a curs
+  local -i row=0
   curs_store curs
   printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$row]}"
   for ((i=0;++i<rows;)); do
-    ((i==pglim)) && break
+    ((i==dim_y)) && break
     printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
   done
   curs_load curs
@@ -269,16 +271,21 @@ kb_nav() {
         # If non-zero index
         ((row)) && {
           # If cursor on first line of window
-          (($(get_line)==linelim_lo)) && {
-            printf '\xAF \x9B7m%s\x9B27m' "${ref[$((--row))]}"
-            printf "$(echoes '\x20' $((${#ref[row+1]}-${#ref[row]})))\x1B8\x9BB"
-            for ((i=0;++i<pglim;)); do
-              printf '\x1B7  %s' "${ref[$((row+i))]}"
-              printf "$(echoes '\x20' $((${#ref[row+i+1]}-${#_})))\x1B8\x9BB"
+          (($(get_line)==lim_y_lo)) && {
+            # Erasing whole window is easier without relative index references
+            # and default virtual console doesn't store scrolling input anyways
+            curs_load curs
+            for ((i=0;i++<dim_y;));{ printf "${white_sp}\x1B8\x9BB\x1B7";}
+            curs_load curs
+            # Print highlighted selection on first line
+            printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((--row))]}"
+            # Print remaining lines
+            for ((i=0;++i<dim_y;)); do
+              printf '\x1B7  %s\x1B8\x9BB' "${ref[$((row+i))]}"
             done
             curs_load curs
           } || {
-          # 
+          # Else remove highlight on current selection before printing next
             printf '  %s\x1B8\x9BA\x1B7' "${ref[$((row--))]}"
             printf '\xAF \x9B7m%s\x1B8' "${ref[$row]}"
           }
@@ -289,69 +296,96 @@ kb_nav() {
         # If index less than total elements
         ((row+1<rows)) && {
           # If cursor on last line of window
-          (($(get_line)==linelim_hi)) && {
-            # Bring cursor to top
+          (($(get_line)==lim_y_hi)) && {
+            # Erasing window
             curs_load curs
-            # Reprinting elements because linefeeding affects other windows
-            # and default virtual console doesn't store scrolling input anyways
-            for ((i=row-pglim+2;i<row+1;i++)); do
-              printf "\x1B7  ${ref[$i]}"
-              # Use whitespace to erase trailing characters
-              printf "$(echoes '\x20' $((${#ref[i-1]}-${#ref[i]})))\x1B8\x9BB"
+            for ((i=0;i++<dim_y;));{ printf "${white_sp}\x1B8\x9BB\x1B7";}
+            curs_load curs
+            # Print preceding lines
+            for ((i=row-dim_y+2;i<row+1;i++)); do
+              printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}"
             done
-            # Format and print line on target cursor
-            printf '\x1B7\xAF \x9B7m%s\x9B27m' "${ref[$((++row))]}"
-            printf "$(echoes '\x20' $((${#ref[row-1]}-${#ref[row]})))\x1B8"
+            # Print highlighted selection on last line
+            printf '\x1B7\xAF \x9B7m%s\x1B8' "${ref[$((++row))]}"
           } || {
-          # Else reprint line without reverse attributes before next line
+          # Else remove highlight on current selection before printing next
             printf '  %s\x1B8\x9BB\x1B7' "${ref[$((row++))]}"
             printf '\xAF \x9B7m%s\x1B8' "${ref[$row]}"
           }
         }
       ;;
+      # ENTER
       $'\n') 
         printf '  \x9B7m%s\x1B8\x1B7' "${ref[$row]}"
         draw_select $row
       ;;
+      # SPACE
       $'\x20') echo 'space';;
       # RIGHT
       l|$'\x9BC') printf "\x9BuRIGHT";;
       # LEFT
       h|$'\x9BD') printf "\x9BuLEFT";;
-      # HOME and END
-      $'\x9B1~'|$'\x9B4~') 
+      # HOME | END | PGUP | PGDOWN
+      $'\x9B1~'|$'\x9B4~'|$'\x9B5~'|$'\x9B6~') 
+        # Erasing window
         curs_load curs
-        # Erasing whole window is easier without relative index references
-        for ((i=0;i++<pglim;)); do
-          printf "$(echoes '\x20' $((COLUMNS-curs[1]-linelim_lo+1)))"
-          printf "\x1B8\x9BB\x1B7"
-        done && curs_load curs
-        [[ ${key} == $'\x9B1~' ]] && {
-          # Reprint options similar to when entering function
-          printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((row=0))]}"
-          for ((i=row;++i<rows;)); do
-            ((i==pglim)) && break
-            printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
-          done && curs_load curs
-        } || {
-          ((rows>pglim)) && ((row=rows-pglim-1)) || ((row=-1))
-          for ((row;++row<rows;)); do
-            (($(get_line)>linelim_hi)) && break
-            printf "\x1B7  ${ref[$row]}\x1B8\x9BB"
-          done
-          printf '\x1B8\xAF \x9B7m%s\x1B8' "${ref[$((--row))]}"
-        }
+        for ((i=0;i++<dim_y;));{ printf "${white_sp}\x1B8\x9BB\x1B7";}
+        curs_load curs
+        case ${key} in
+          $'\x9B1~') # HOME
+            # Reprint options similar to when entering function
+            printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((row=0))]}"
+            for ((i=row;++i<rows;)); do
+              ((i==dim_y)) && break
+              printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
+            done && curs_load curs
+          ;;
+          $'\x9B4~') # END
+            ((rows>dim_y)) && ((row=rows-dim_y-1)) || ((row=-1))
+            for ((row;++row<rows;)); do
+              (($(get_line)>lim_y_hi)) && break
+              printf "\x1B7  ${ref[$row]}\x1B8\x9BB"
+            done
+            printf '\x1B8\xAF \x9B7m%s\x1B8' "${ref[$((--row))]}"
+          ;;
+          $'\x9B5~') # PGUP
+            # If scroll margins are within first page
+            # Reprint options similar to when entering function
+            ((row<dim_y+1)) && {
+              printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((row=0))]}"
+              for ((i=row;++i<rows;)); do
+                ((i==dim_y)) && break
+                printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
+              done && curs_load curs
+            } || {
+            # Else print from offset onward
+              ((row-=dim_y))
+              printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$row]}"
+              for ((i=0;++i<dim_y;)); do
+                printf "\x1B7  ${ref[$((row+i))]}\x1B8\x9BB"
+              done && curs_load curs
+            }
+          ;;
+          $'\x9B6~') # PGDOWN
+            # If scroll margins are within last page
+            # Reprint options similar to when END key is pressed
+            ((row>rows-dim_y-2)) && {
+              ((rows>dim_y)) && ((row=rows-dim_y-1)) || ((row=-1))
+              for ((row;++row<rows;)); do
+                (($(get_line)>lim_y_hi)) && break
+                printf "\x1B7  ${ref[$row]}\x1B8\x9BB"
+              done
+              printf '\x1B8\xAF \x9B7m%s\x1B8' "${ref[$((--row))]}"
+            } || {
+            # Else print add offset and print to sum
+              ((row+=dim_y))
+              for ((i=dim_y;--i>0;)); do
+                printf "\x1B7  ${ref[$((row-i))]}\x1B8\x9BB"
+              done && printf '\x1B7\xAF \x9B7m%s\x1B8' "${ref[$row]}"
+            }
+          ;;
+        esac
       ;;
-      #'4~')
-        #((str_idx < ${#str})) && {
-          #printf "\x9B$(( ${#str} - str_idx ))C"
-          #str_idx=${#str}
-        #}
-      #;;
-      # pg up
-      #$'\x02'|$'\x9B5~') printf "\x9BuPgUP";;
-      # pg down
-      #$'\x06'|$'\x9B6~') printf "\x9BuPgDOWN";;
     esac
   }
 }

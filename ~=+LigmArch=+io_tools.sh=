@@ -150,23 +150,45 @@ silent! normal! zE
 195,207fold
 208,238fold
 155,238fold
-255,266fold
-267,286fold
-287,311fold
-323,344fold
-345,354fold
-239,358fold
-359,368fold
-369,374fold
-375,387fold
+240,256fold
+257,268fold
+269,293fold
+294,316fold
+317,321fold
+322,323fold
+324,327fold
+328,334fold
+335,342fold
+343,350fold
+351,368fold
+351,368fold
+369,386fold
+328,388fold
+239,392fold
+393,402fold
+403,408fold
+409,421fold
 let &fdl = &fdl
-let s:l = 5 - ((4 * winheight(0) + 21) / 43)
+18
+normal! zo
+18
+normal! zc
+239
+normal! zo
+328
+normal! zo
+351
+normal! zo
+328
+normal! zc
+239
+normal! zc
+let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 5
+keepjumps 1
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
-nohlsearch
 doautoall SessionLoadPost
 " vim: set ft=vim :
