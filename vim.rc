@@ -102,6 +102,7 @@ inoremap () ()<LEFT>
 inoremap {} {}<LEFT>
 inoremap [] []<LEFT>
 inoremap "" ""<LEFT>
+inoremap '' ''<LEFT>
 inoremap (<LEADER> () 
 inoremap {<LEADER> {} 
 inoremap [<LEADER> [] 
