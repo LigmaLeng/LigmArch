@@ -126,28 +126,50 @@ get_line() {
   printf $curs
 }
 
+print_pg() {
+  local -n w=win_ctx
+  local -n ref=${win_ctx[nref]}
+  local -i j m n len lim
+  ((m=w[m]-2)) && ((n=w[n]-2)) && ((len=${#ref[@]}))
+  ((lim=w[offset]+m<len?w[offset]+m:len))
+  local white_sp=$(echoes '\x20' $n)
+  # Return cursor to page origin
+  printf "\x9B$((w[y]+1));$((w[x]+1))H"
+  # Erasing whole window is simpler as default virtual console doesn't store
+  # scrolling input and scrolling messes up page borders
+  for ((i=0;i++<m;));{ printf "\x1B7${white_sp}\x1B8\x9BB";}
+  printf "\x9B$((w[y]+1));$((w[x]+1))H"
+  # Populate page
+  for ((j=w[offset]-1;++j<lim;));{ printf "\x1B7  ${ref[$j]}\x1B8\x9BB";}
+  # Move cursor up to selection and print highlighted selection
+  ((j-=w[idx])) && printf "\x9B${j}A\x1B7"
+  printf "  \x9B7m${ref[$((lim-j))]}\x1B8"
+  # Don't print cursor indicator if argument provided
+  [[ "${1:-}" == 'nocurs' ]] || printf '\xAF\x9BD'
+}
+
 win_ctx_op(){
-  local -n w
-  local -a arr
+  local -n w=win_ctx
+  local -n wa=win_ctx_a
   case $1 in
     'set')
-      w=win_ctx
-      read -d '' w[y] w[x] w[m] w[n] w[nref] w[offset] w[idx] <<< "${2//,/ }"
+      read -d '' w[y] w[x] w[m] w[n] w[nref] <<< "${2//,/ }"
+      ((w[offset]=0)) || ((w[idx]=0))
     ;;
     'push')
-      w=win_ctx
       : "${w[y]},${w[x]},${w[m]},${w[n]},${w[nref]},${w[offset]},${w[idx]}"
       win_ctx_a+=("$_")
     ;;
     'rebuild')
-      w=win_ctx_a
-      printf '\x9B%s' 2J r
-      for ((i=0;i<${#w[@]};i++)); do
-        read -d '' -a arr <<< "${w[$i]//,/ }"
-        draw_window ${arr[0]} "${arr[1]};${arr[2]}"
+      # Inner dimensions
+      for i in ${wa[@]}; do
+        read -d '' w[y] w[x] w[m] w[n] w[nref] w[offset] w[idx] <<< "${i//,/ }"
+        draw_window
+        print_pg 'nocurs'
       done
-    #;&
-    ;;
+      # Print cursor indicator for top window context
+      printf '\xAF\x9BD'
+    ;&
     'pop')
       unset win_ctx_a[-1]
     ;;
@@ -183,7 +205,6 @@ exit_prompt() {
     esac
   }
   win_ctx_op 'rebuild'
-  #printf '%s %s\n' ${win_ctx_test[@]@k}
 }
 
 parse_files() {
@@ -242,41 +263,31 @@ draw_window() {
 }
 
 draw_main() {
-  win_ctx_op 'set' "1,1,${LINES},${COLUMNS},setopt_pairs_f,0,0"
+  win_ctx_op 'set' "1,1,${LINES},${COLUMNS},setopt_pairs_f"
   draw_window
   for ((i=0;i<${#SETOPT_KEYS[@]};i++)); do
     setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}${setopt_pairs[${SETOPT_KEYS[$i]}]}"
   done
-  kb_nav setopt_pairs_f $((LINES-2)) $((COLUMNS-2))
+  kb_nav
 }
 
 draw_select() {
-  local -i optkey_idx=$1
   win_ctx_op 'push'
-  : "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1)),${SETOPT_KEYS[$1]}_A,0,0"
-  win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1)),setopt_pairs_f,0,0"
+  # Refer to corresponding array for each option key
+  : "${SETOPT_KEYS[$1]}_A"
+  win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1)),$_"
   draw_window
-  kb_nav $((LINES-4)) $((SAGITTAL-3))
+  kb_nav
 }
 
 kb_nav() {
   local key
-  local -n ref=$1
-  local -ir dim_y=$2
-  local -ir dim_x=$3
-  local -ir lim_y_lo=$(((LINES-dim_y>>1)+1))
-  local -ir lim_y_hi=$((lim_y_lo+dim_y-1))
-  local -ir len=${#ref[@]}
+  local -n ref=${win_ctx[nref]}
   local -n idx=win_ctx[idx]
-  local -r white_sp=$(echoes '\x20' $dim_x)
-  local -a curs
-  curs_store curs
-  printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$idx]}"
-  for ((i=0;++i<len;)); do
-    ((i==dim_y)) && break
-    printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
-  done
-  curs_load curs
+  local -n arr_offs=win_ctx[offset]
+  local -ir len=${#ref[@]}
+  local -ir pglim=$((win_ctx[m]-2))
+  print_pg
   for ((;;)); {
     read "${READ_OPTS[@]}" -N1 key
     # Continue loop if read times out from lack of input
@@ -293,20 +304,11 @@ kb_nav() {
       k|$'\x9BA')
         # If non-zero index
         ((idx)) && {
-          # If cursor on first line of window
-          (($(get_line)==lim_y_lo)) && {
-            # Erasing whole window is easier without relative index references
-            # and default virtual console doesn't store scrolling input anyways
-            curs_load curs
-            for ((i=0;i++<dim_y;));{ printf "${white_sp}\x1B8\x9BB\x1B7";}
-            curs_load curs
-            # Print highlighted selection on first line
-            printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((--idx))]}"
-            # Print remaining lines
-            for ((i=0;++i<dim_y;)); do
-              printf '\x1B7  %s\x1B8\x9BB' "${ref[$((idx+i))]}"
-            done
-            curs_load curs
+          # If cursor on first line of page
+          ((idx==arr_offs)) && {
+            ((arr_offs--))
+            ((idx--))
+            print_pg
           } || {
           # Else remove highlight on current selection before printing next
             printf '  %s\x1B8\x9BA\x1B7' "${ref[$((idx--))]}"
@@ -316,20 +318,13 @@ kb_nav() {
       ;;
       # DOWN
       j|$'\x9BB')
-        # If index less than total elements
-        ((idx+1<len)) && {
-          # If cursor on last line of window
-          (($(get_line)==lim_y_hi)) && {
-            # Erasing window
-            curs_load curs
-            for ((i=0;i++<dim_y;));{ printf "${white_sp}\x1B8\x9BB\x1B7";}
-            curs_load curs
-            # Print preceding lines
-            for ((i=idx-dim_y+2;i<idx+1;i++)); do
-              printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}"
-            done
-            # Print highlighted selection on last line
-            printf '\x1B7\xAF \x9B7m%s\x1B8' "${ref[$((++idx))]}"
+        # If not last index
+        ((idx+1!=len)) && {
+          # If cursor on last line of page
+          ((idx+1==arr_offs+pglim)) && {
+            ((arr_offs++))
+            ((idx++))
+            print_pg
           } || {
           # Else remove highlight on current selection before printing next
             printf '  %s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
@@ -348,66 +343,31 @@ kb_nav() {
       l|$'\x9BC') printf "\x9BuRIGHT";;
       # LEFT
       h|$'\x9BD') printf "\x9BuLEFT";;
-      # HOME | END | PGUP | PGDOWN
-      $'\x9B1~'|$'\x9B4~'|$'\x9B5~'|$'\x9B6~') 
-        # Erasing window
-        curs_load curs
-        for ((i=0;i++<dim_y;));{ printf "${white_sp}\x1B8\x9BB\x1B7";}
-        curs_load curs
-        case ${key} in
-          $'\x9B1~') # HOME
-            # Reprint options similar to when entering function
-            printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((idx=0))]}"
-            for ((i=idx;++i<len;)); do
-              ((i==dim_y)) && break
-              printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
-            done && curs_load curs
-          ;;
-          $'\x9B4~') # END
-            ((len>dim_y)) && ((idx=len-dim_y-1)) || ((idx=-1))
-            for ((idx;++idx<len;)); do
-              (($(get_line)>lim_y_hi)) && break
-              printf "\x1B7  ${ref[$idx]}\x1B8\x9BB"
-            done
-            printf '\x1B8\xAF \x9B7m%s\x1B8' "${ref[$((--idx))]}"
-          ;;
-          $'\x9B5~') # PGUP
-            # If scroll margins are within first page
-            # Reprint options similar to when entering function
-            ((idx<dim_y+1)) && {
-              printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$((idx=0))]}"
-              for ((i=idx;++i<len;)); do
-                ((i==dim_y)) && break
-                printf "\x1B7  ${ref[$i]}\x1B8\x9BB"
-              done && curs_load curs
-            } || {
-            # Else print from offset onward
-              ((idx-=dim_y))
-              printf '\xAF \x9B7m%s\x1B8\x9BB' "${ref[$idx]}"
-              for ((i=0;++i<dim_y;)); do
-                printf "\x1B7  ${ref[$((idx+i))]}\x1B8\x9BB"
-              done && curs_load curs
-            }
-          ;;
-          $'\x9B6~') # PGDOWN
-            # If scroll margins are within last page
-            # Reprint options similar to when END key is pressed
-            ((idx>len-dim_y-2)) && {
-              ((len>dim_y)) && ((idx=len-dim_y-1)) || ((idx=-1))
-              for ((idx;++idx<len;)); do
-                (($(get_line)>lim_y_hi)) && break
-                printf "\x1B7  ${ref[$idx]}\x1B8\x9BB"
-              done
-              printf '\x1B8\xAF \x9B7m%s\x1B8' "${ref[$((--idx))]}"
-            } || {
-            # Else print add offset and print to sum
-              ((idx+=dim_y))
-              for ((i=dim_y;--i>0;)); do
-                printf "\x1B7  ${ref[$((idx-i))]}\x1B8\x9BB"
-              done && printf '\x1B7\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
-            }
-          ;;
-        esac
+      # HOME
+      $'\x9B1~')
+        arr_offs=0
+        idx=0
+        print_pg
+      ;;
+      # END
+      $'\x9B4~')
+        ((arr_offs=len>pglim?len-pglim:0))
+        ((idx=len-1))
+        print_pg
+      ;;
+      # PGUP
+      $'\x9B5~')
+        ((arr_offs=arr_offs-pglim>0?arr_offs-pglim:0))
+        ((idx=idx-pglim>0?idx-pglim:0))
+        print_pg
+      ;;
+      # PGDOWN
+      $'\x9B6~')
+        ((arr_offs+pglim<len-pglim)) && ((arr_offs+=pglim)) || {
+          ((arr_offs=len>pglim?len-pglim:0))
+        }
+        ((idx=idx+pglim<len?idx+pglim:len-1))
+        print_pg
       ;;
     esac
   }
