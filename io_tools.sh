@@ -160,7 +160,7 @@ win_ctx_op(){
       : "${w[y]},${w[x]},${w[m]},${w[n]},${w[nref]},${w[offset]},${w[idx]}"
       win_ctx_a+=("$_")
     ;;
-    'rebuild')
+    'pop')
       # Inner dimensions
       for i in ${wa[@]}; do
         read -d '' w[y] w[x] w[m] w[n] w[nref] w[offset] w[idx] <<< "${i//,/ }"
@@ -169,10 +169,7 @@ win_ctx_op(){
       done
       # Print cursor indicator for top window context
       printf '\xAF\x9BD'
-    ;&
-    'pop')
       unset win_ctx_a[-1]
-    ;;
   esac
 }
 
@@ -204,7 +201,7 @@ exit_prompt() {
       *) continue;;
     esac
   }
-  win_ctx_op 'rebuild'
+  win_ctx_op 'pop'
 }
 
 parse_files() {
@@ -272,12 +269,19 @@ draw_main() {
 }
 
 draw_select() {
+  local optkey=${SETOPT_KEYS[$1]}
+  local -n ref
   win_ctx_op 'push'
   # Refer to corresponding array for each option key
-  : "${SETOPT_KEYS[$1]}_A"
-  win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1)),$_"
+  win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1)),${optkey}_A"
   draw_window
   kb_nav
+  (($?)) || {
+    ref="${optkey}_A"
+    setopt_pairs[$optkey]=${ref[${win_ctx[idx]}]}
+    setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
+  }
+  win_ctx_op 'pop'
 }
 
 kb_nav() {
@@ -296,7 +300,7 @@ kb_nav() {
     [[ ${key} == $'\x1B' ]] && {
       read "${READ_OPTS[@]}" -N1
       # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
-      [[ "${REPLY}" != "[" ]] && return 0 || read "${READ_OPTS[@]}" -N2
+      [[ "${REPLY}" != "[" ]] && return 1 || read "${READ_OPTS[@]}" -N2
       key=$'\x9B'${REPLY}
     }
     case ${key} in
@@ -334,8 +338,10 @@ kb_nav() {
       ;;
       # ENTER
       $'\n') 
-        printf '  \x9B7m%s\x1B8\x1B7' "${ref[$idx]}"
-        draw_select $idx
+        printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
+        [[ "${win_ctx[nref]}" == 'setopt_pairs_f' ]] && {
+          draw_select $idx
+        } || return 0
       ;;
       # SPACE
       $'\x20') echo 'space';;
