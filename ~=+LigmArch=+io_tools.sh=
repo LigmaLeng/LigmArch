@@ -27,7 +27,7 @@ setlocal nocopyindent
 setlocal cryptmethod=
 setlocal nocursorbind
 setlocal nocursorcolumn
-setlocal nocursorline
+setlocal cursorline
 setlocal cursorlineopt=both
 setlocal define=
 setlocal dictionary=
@@ -131,67 +131,35 @@ setlocal nowrap
 setlocal wrapmargin=0
 silent! normal! zE
 1,4fold
-6,6fold
-5,26fold
-27,34fold
-35,36fold
-37,44fold
-27,44fold
-45,53fold
-54,66fold
-67,72fold
-73,85fold
-45,85fold
-27,85fold
-86,94fold
-95,119fold
-86,119fold
-120,125fold
-126,131fold
-132,137fold
-120,137fold
-138,152fold
-153,182fold
-183,220fold
-221,240fold
-241,250fold
-251,265fold
-266,419fold
-420,429fold
-430,435fold
-436,448fold
+5,19fold
+20,27fold
+28,29fold
+30,37fold
+38,46fold
+47,59fold
+60,65fold
+66,78fold
+79,87fold
+88,112fold
+113,117fold
+118,122fold
+123,128fold
+129,150fold
+151,175fold
+176,206fold
+207,246fold
+247,263fold
+264,272fold
+273,291fold
+292,386fold
+387,397fold
 let &fdl = &fdl
-5
-normal! zo
-27
-normal! zo
-27
-normal! zo
-27
-normal! zc
-45
-normal! zo
-86
-normal! zo
-86
-normal! zc
-120
-normal! zo
-120
-normal! zo
-132
-normal! zo
-138
-normal! zo
-436
-normal! zo
-let s:l = 448 - ((316 * winheight(0) + 21) / 42)
+let s:l = 275 - ((274 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 448
-normal! 0
+keepjumps 275
+normal! 01|
 let &g:so = s:so_save | let &g:siso = s:siso_save
-nohlsearch
 doautoall SessionLoadPost
 " vim: set ft=vim :

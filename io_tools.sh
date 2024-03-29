@@ -205,7 +205,7 @@ exit_prompt() {
 }
 
 parse_files() {
-  local -i optsp=0
+  local -i lim=0
   # Parse config template file
   while read; do
     case $REPLY in
@@ -215,7 +215,7 @@ parse_files() {
         : "${REPLY#[}"
         SETOPT_KEYS+=("${_%]}")
         # Keep track of longest optkey
-        ((optsp=${#SETOPT_KEYS[-1]}>optsp?${#SETOPT_KEYS[-1]}:$optsp))
+        ((lim=${#SETOPT_KEYS[-1]}>lim?${#SETOPT_KEYS[-1]}:$lim))
       ;;
       value*)
         setopt_pairs[${SETOPT_KEYS[-1]}]=${REPLY#*= }
@@ -230,14 +230,16 @@ parse_files() {
       ;;
     esac
   done < "$TEMPLATE_DIR"
-  # Format optkey spacing for prints
+  # Format spacing for printing setup options
   for i in ${SETOPT_KEYS[@]}; do
-    SETOPT_KEYS_F+=("${i/_/ }$(echoes '\x20' $((optsp-${#i}+3)))")
+    SETOPT_KEYS_F+=("${i/_/ }$(echoes '\x20' $((lim-${#i}+3)))")
   done
-  # Get kbd keymap files and parse supported locales
+  # Get kbd keymap files
   KEYMAP_A=($(localectl list-keymaps))
+  # Parse supported locales and format spacing for printing
+  lim=$((SAGITTAL-4))
   while read; do
-    LOCALES_A+=("$REPLY")
+    LOCALES_A+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
   declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP_A LOCALES_A
 }
@@ -278,7 +280,10 @@ draw_select() {
   kb_nav
   (($?)) || {
     ref="${optkey}_A"
-    setopt_pairs[$optkey]=${ref[${win_ctx[idx]}]}
+    [[ "$optkey" == 'LOCALES' ]] && {
+      : "${ref[${win_ctx[idx]}]}"
+      setopt_pairs[$optkey]="${_%% *}"
+    } || setopt_pairs[$optkey]=${ref[${win_ctx[idx]}]}
     setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
   }
   win_ctx_op 'pop'
@@ -381,11 +386,11 @@ kb_nav() {
 
 main() {
   trap 'reset_console' EXIT
-  #trap 'get_console_size; draw_window' SIGWINCH
+  trap 'get_console_size; draw_window' SIGWINCH
   trap 'exit_prompt' SIGINT
   [[ $1 == -d ]] && test_size || set_console
-  parse_files
   display_init
+  parse_files
   draw_main
   nap 2
 }
