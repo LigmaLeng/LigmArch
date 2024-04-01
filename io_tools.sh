@@ -3,7 +3,7 @@
 # TODO: Write file header
 
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
-CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch.conf}
+CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
 TEMPLATE_DIR="${CTX_DIR}/options.conf"
 READ_OPTS=(-rs -t 0.05)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
@@ -40,7 +40,7 @@ set_console() {
   printf '\x1B%s' '%@' '(K' ')K'
 }
 
-reset_console() {
+cleanup() {
   # m     Reset Colours 
   # ?25h  Show cursor
   # ?7h   Disable line wrapping
@@ -199,6 +199,7 @@ exit_prompt() {
 parse_files() {
   local lim
   lim=0
+  [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
   # Parse config template file
   while read; do
     case $REPLY in
@@ -228,12 +229,23 @@ parse_files() {
     SETOPT_KEYS_F+=("${i/_/ }$(echoes '\x20' $((lim-${#i}+3)))")
   }
   # Retrieve currently active mirrors
-  [[ -a "/etc/pacman.d/mirrorlist" ]]
-  exec {mirror_fd}<> <(curl -s "https://archlinux.org/mirrorlist/all/https/")
-  while read -u $mirror_fd; do [[ "$REPLY" == '## Worldwide' ]] && break; done
-  while read -t 0 -u $mirror_fd && read -u $mirror_fd; do
-    [[ "$REPLY" == '## '* ]] && MIRRORS+=("${REPLY#* }")
-  done
+  [[ -a "${CACHE_DIR}/mirrorlist" ]] && {
+    while read; do MIRRORS+=("$REPLY"); done < "${CACHE_DIR}/mirror_countries"
+  } || {
+    exec {mirror_fd}<> <(curl -s "https://archlinux.org/mirrorlist/all/https/")
+    # Discard lines up to first comment containing a named country
+    while read -u $mirror_fd; do [[ "$REPLY" == '## Worldwide' ]] && break; done
+    # Append names of countries with active mirrors to array
+    # while appending lines to cache files
+    while read -t 0 -u $mirror_fd && read -u $mirror_fd; do
+      [[ "$REPLY" == '## '* ]] && {
+        MIRRORS+=("${REPLY#* }")
+        printf '%s\n' "${MIRRORS[-1]}" >> "${CACHE_DIR}/mirror_countries"
+      }
+      printf '%s\n' "$REPLY" >> "${CACHE_DIR}/mirrorlist"
+    done
+    exec $mirror_fd>&-
+  }
   # Get kbd keymap files
   KEYMAP=($(localectl list-keymaps))
   # Parse supported locales and format spacing for printing
@@ -241,7 +253,7 @@ parse_files() {
   while read; do
     LOCALES+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
-  declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP LOCALES
+  declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALES
 }
 
 draw_window() {
@@ -365,7 +377,7 @@ kb_nav() {
 }
 
 main() {
-  trap 'reset_console' EXIT
+  trap 'cleanup' EXIT
   trap 'get_console_size; draw_window' SIGWINCH
   trap 'exit_prompt' SIGINT
   [[ $1 == -d ]] && test_size || set_console
