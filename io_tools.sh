@@ -12,7 +12,7 @@ declare -a SETOPT_KEYS SETOPT_KEYS_F
 declare -a KEYMAP MIRRORS LOCALES
 declare -a setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
-win_ctx=(y '' x '' m '' n '' nref '' offset '' idx '')
+win_ctx=(win_attr '' nref '' pg_attr '' offset '' idx '')
 
 die() {
   local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
@@ -125,7 +125,9 @@ print_pg() {
   local -n w ref
   local white_sp
   w=win_ctx ref=${win_ctx[nref]}
-  y=w[y] x=w[x] m=w[m]-2 n=w[n]-2 len=${#ref[@]}
+  len=${#ref[@]}
+  read -d '' y x m n <<< "${w[win_attr]//,/ }"
+  ((m-=2,n-=2))
   ((lim=w[offset]+m<len?w[offset]+m:len))
   white_sp=$(echoes '\x20' $n)
   # Return cursor to page origin
@@ -144,20 +146,22 @@ print_pg() {
 
 win_ctx_op(){
   local -n w wa
+  local win_attr
   w=win_ctx wa=win_ctx_a
   case $1 in
     'set')
-      read -d '' w[y] w[x] w[m] w[n] w[nref] <<< "${2//,/ }"
+      read -d '' w[win_attr] w[nref] w[pg_attr] <<< "${2//;/ }"
       w[offset]=0 w[idx]=0
     ;;
     'push')
-      : "${w[y]},${w[x]},${w[m]},${w[n]},${w[nref]},${w[offset]},${w[idx]}"
+      : "${w[win_attr]};${w[nref]};${w[pg_attr]};${w[offset]};${w[idx]}"
       win_ctx_a+=("$_")
     ;;
     'pop')
       # Inner dimensions
       for i in ${wa[@]};{
-        read -d '' w[y] w[x] w[m] w[n] w[nref] w[offset] w[idx] <<< "${i//,/ }"
+        : "${i//;/ }"
+        read -d '' w[win_attr] w[nref] w[pg_attr] w[offset] w[idx] <<< "$_"
         draw_window
         print_pg 'nocurs'
       }
@@ -244,7 +248,7 @@ parse_files() {
       }
       printf '%s\n' "$REPLY" >> "${CACHE_DIR}/mirrorlist"
     done
-    exec $mirror_fd>&-
+    exec {mirror_fd}>&-
   }
   # Get kbd keymap files
   KEYMAP=($(localectl list-keymaps))
@@ -260,7 +264,8 @@ draw_window() {
   local -i y x m n offset
   local -n w
   local horz vert
-  w=win_ctx y=w[y] x=w[x] m=w[m] n=w[n] offset=0
+  w=win_ctx offset=0
+  read -d '' y x m n <<< "${w[win_attr]//,/ }"
   horz=$(echoes '\xCD' $((n - 2))) vert="\xBA\x9B$((n-2))C\xBA"
   # Cursor origin and print top border
   printf '\x9B%s;%sH\xC9%s\xBB' $y $x $horz
@@ -273,7 +278,7 @@ draw_window() {
 }
 
 draw_main() {
-  win_ctx_op 'set' "1,1,${LINES},${COLUMNS},setopt_pairs_f"
+  win_ctx_op 'set' "1,1,${LINES},${COLUMNS};setopt_pairs_f;single"
   draw_window
   for((i=0;i<${#SETOPT_KEYS[@]};i++)){
     setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}${setopt_pairs[${SETOPT_KEYS[$i]}]}"
@@ -286,8 +291,9 @@ draw_select() {
   local optkey
   optkey=${SETOPT_KEYS[$1]}
   win_ctx_op 'push'
+  [[ "$optkey" =~ ^(MIRRORS|LOCALES|KERNELS)$ ]] && : 'multi' || : 'single'
   # Refer to corresponding array for each option key
-  win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1)),${optkey}"
+  win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
   draw_window
   kb_nav
   (($?)) || {
@@ -305,8 +311,9 @@ kb_nav() {
   local key
   local -i len pglim
   local -n ref idx arr_offs
-  ref=${win_ctx[nref]} idx=win_ctx[idx] arr_offs=win_ctx[offset]
-  len=${#ref[@]} pglim=win_ctx[m]-2
+  ref=${win_ctx[nref]} idx=win_ctx[idx] arr_offs=win_ctx[offset] len=${#ref[@]}
+  read -d '' _ _ pglim _ <<< "${win_ctx[win_attr]//,/ }"
+  ((pglim-=2))
   print_pg
   for((;;)){
     read ${READ_OPTS[@]} -N1 key
@@ -384,6 +391,5 @@ main() {
   display_init
   parse_files
   draw_main
-  nap 2
 }
 main "$@"
