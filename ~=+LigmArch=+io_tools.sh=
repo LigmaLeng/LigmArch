@@ -125,6 +125,7 @@ setlocal varsofttabstop=
 setlocal vartabstop=
 setlocal virtualedit=
 setlocal wincolor=
+setlocal nowinfixbuf
 setlocal nowinfixheight
 setlocal nowinfixwidth
 setlocal nowrap
@@ -144,41 +145,41 @@ silent! normal! zE
 107,111fold
 112,116fold
 117,122fold
-123,146fold
-147,173fold
-174,202fold
-207,230fold
-231,234fold
-235,252fold
-253,254fold
-255,259fold
-203,262fold
-263,279fold
-280,288fold
-289,309fold
-314,317fold
-311,317fold
-318,328fold
-330,330fold
-330,340fold
-341,351fold
-352,358fold
-359,360fold
-361,362fold
-363,364fold
-365,366fold
-367,368fold
-369,374fold
-375,381fold
-310,385fold
-386,395fold
+123,162fold
+163,189fold
+190,218fold
+223,246fold
+247,250fold
+251,268fold
+269,270fold
+271,275fold
+219,278fold
+279,295fold
+296,304fold
+305,325fold
+330,333fold
+327,333fold
+334,344fold
+350,350fold
+350,363fold
+364,377fold
+378,384fold
+385,390fold
+391,392fold
+393,394fold
+395,396fold
+397,398fold
+399,404fold
+405,411fold
+326,416fold
+417,426fold
 let &fdl = &fdl
-let s:l = 315 - ((234 * winheight(0) + 21) / 42)
+let s:l = 161 - ((89 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 315
-normal! 01|
+keepjumps 161
+normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
 nohlsearch
 doautoall SessionLoadPost

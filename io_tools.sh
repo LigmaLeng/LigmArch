@@ -9,7 +9,7 @@ READ_OPTS=(-rs -t 0.05)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F
-declare -a KEYMAP MIRRORS LOCALES
+declare -a KEYMAP LOCALE MIRRORS
 declare -a setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(win_attr '' nref '' pg_attr '' offset '' idx '')
@@ -137,9 +137,25 @@ print_pg() {
   for((i=0;i++<m;)){ printf '\x1B7%s\x1B8\x9BB' "${white_sp}";}
   printf '\x9B%s;%sH' $((y+1)) $((x+1))
   # Populate page
-  for((i=w[offset]-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
-  # Move cursor up to selection and print highlighted selection
-  printf '\x9B%sA\x1B7  \x9B7m%s\x1B8' $((i-=w[idx])) "${ref[$((lim-i))]}"
+  [[ ${w[pg_attr]} == 'single' ]] && {
+    for((i=w[offset]-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
+    # Move cursor up to selection and print highlighted selection
+    printf '\x9B%sA\x1B7  \x9B7m%s\x1B8' $((i-=w[idx])) "${ref[$((lim-i))]}"
+  } || {
+    for((i=w[offset]-1;++i<lim;)){
+      printf '\x1B7 \x10  \x11 %s\x1B8\x9BB' "${ref[$i]}"
+    }
+    printf '\x9B%s;%sH\x1B7' $y $((x+1))
+    [[ "${w[idx]}" =~ ',*'$ ]] && {
+      : "${w[idx]%,*}"
+      for i in ${_//,/ };{
+        ((i<w[offset]||i>lim)) && continue
+        printf '\x9B%sB  \x11\x10 \x1B8' $((i-w[offset]+1))
+      }
+    }
+    i=${w[idx]##*,}
+    printf '\x9B%sB\x1B7\x9B6C\x9B7m%s\x1B8' $((i-w[offset]+1)) "${ref[$i]}"
+  }
   # Don't print cursor indicator if argument provided
   [[ "${1:-}" == 'nocurs' ]] || printf '\xAF\x9BD'
 }
@@ -255,9 +271,9 @@ parse_files() {
   # Parse supported locales and format spacing for printing
   lim=$((SAGITTAL-4))
   while read; do
-    LOCALES+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
+    LOCALE+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
-  declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALES
+  declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALE
 }
 
 draw_window() {
@@ -291,14 +307,14 @@ draw_select() {
   local optkey
   optkey=${SETOPT_KEYS[$1]}
   win_ctx_op 'push'
-  [[ "$optkey" =~ ^(MIRRORS|LOCALES|KERNELS)$ ]] && : 'multi' || : 'single'
+  [[ "$optkey" =~ ^(MIRRORS|KERNELS)$ ]] && : 'multi' || : 'single'
   # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
   draw_window
   kb_nav
   (($?)) || {
     ref=$optkey
-    [[ "$optkey" == 'LOCALES' ]] && {
+    [[ "$optkey" == 'LOCALE' ]] && {
       : "${ref[${win_ctx[idx]}]}"
       setopt_pairs[$optkey]=${_%% *}
     } || setopt_pairs[$optkey]=${ref[${win_ctx[idx]}]}
@@ -308,7 +324,7 @@ draw_select() {
 }
 
 kb_nav() {
-  local key
+  local key tmp
   local -i len pglim
   local -n ref idx arr_offs
   ref=${win_ctx[nref]} idx=win_ctx[idx] arr_offs=win_ctx[offset] len=${#ref[@]}
@@ -326,6 +342,10 @@ kb_nav() {
       [[ "${REPLY}" != "[" ]] && return 1 || read ${READ_OPTS[@]} -N2
       key=$'\x9B'${REPLY}
     }
+    [[ ${win_ctx[pg_attr]} == 'multi' ]] && {
+      [[ "$idx" =~ ,*$ ]] && tmp="${idx%,*}" || tmp=''
+      idx="${idx##*,}"
+    } || tmp=''
     case ${key} in
       # UP
       k|$'\x9BA')
@@ -334,8 +354,11 @@ kb_nav() {
         # If cursor on first line of page, decrement indices and print
         ((idx==arr_offs)) && { ((arr_offs--,idx--)); print_pg;} || {
         # Else remove highlight on current line before printing subsequent line
-          printf '  %s\x1B8\x9BA\x1B7' "${ref[$((idx--))]}"
-          printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
+          printf ' '
+          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
+            printf ' %s\x1B8\x9BA\x1B7\xAF' "${ref[$((idx--))]}"
+          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
+            printf ' \x9B7m%s\x1B8' "${ref[$idx]}"
         }
       ;;
       # DOWN
@@ -345,8 +368,11 @@ kb_nav() {
         # If cursor on last line of page, increment indices and print
         ((idx+1==arr_offs+pglim)) && { ((arr_offs++,idx++)); print_pg;} || {
         # Else remove highlight on current line before printing subsequent line
-          printf '  %s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
-          printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
+          printf ' '
+          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
+            printf ' %s\x1B8\x9BB\x1B7\xAF' "${ref[$((idx++))]}"
+          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
+            printf ' \x9B7m%s\x1B8' "${ref[$idx]}"
         }
       ;;
       # ENTER
@@ -357,7 +383,11 @@ kb_nav() {
         } || return 0
       ;;
       # SPACE
-      $'\x20') echo 'space';;
+      $'\x20')
+        [[ ${win_ctx[pg_attr]} == 'multi' ]] && {
+          [[ -n $tmp ]] && tmp="${tmp},$idx" || tmp=$idx
+        }
+      ;;
       # RIGHT
       l|$'\x9BC') printf "\x9BuRIGHT";;
       # LEFT
@@ -380,6 +410,7 @@ kb_nav() {
         print_pg
       ;;
     esac
+    [[ -n $tmp ]] && idx="${tmp},$idx"
   }
 }
 
