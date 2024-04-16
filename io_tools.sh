@@ -323,6 +323,104 @@ draw_select() {
   win_ctx_op 'pop'
 }
 
+get_key() {
+  local key
+  for((;;)){
+    read ${READ_OPTS[@]} -N1 key
+    # Continue loop if read times out from lack of input
+    (($?>128)) && continue
+    # Handling escape characters
+    [[ ${key} == $'\x1B' ]] && {
+      read ${READ_OPTS[@]} -N1
+      # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
+      [[ "${REPLY}" != "[" ]] && return 0 || read ${READ_OPTS[@]} -N2
+      key=$'\x9B'${REPLY}
+    }
+    case ${key} in
+      $'\n') return 1;;# ENTER
+      k|$'\x9BA') return 2;;# UP
+      j|$'\x9BB') return 3;;# DOWN
+      h|$'\x9BD') return 4;;# LEFT
+      l|$'\x9BC') return 5;;# RIGHT
+      $'\x9B5~') return 6;;# PGUP
+      $'\x9B6~') return 7;;# PGDOWN
+      $'\x20') return 8;;# SPACE
+      $'\x9B1~') return 9;;# HOME
+      $'\x9B4~') return 10;;# END
+    esac
+  }
+}
+
+nav_single() {
+  local -i len pglim
+  local -n ref idx arr_offs
+  ref=${win_ctx[nref]} idx=win_ctx[idx] arr_offs=win_ctx[offset] len=${#ref[@]}
+  read -d '' _ _ pglim _ <<< "${win_ctx[win_attr]//,/ }"
+  ((pglim-=2))
+  print_pg
+  for((;;)){
+    get_key
+    case $? in
+      1) # ENTER
+        printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
+        [[ "${win_ctx[nref]}" == 'setopt_pairs_f' ]] && {
+          draw_select $idx
+        } || return 0
+      ;;
+      2) # UP
+        # Ignore 0th index
+        ((!idx)) && continue
+        # If cursor on first line of page, decrement indices and print
+        ((idx==arr_offs)) && { ((arr_offs--,idx--)); print_pg;} || {
+        # Else remove highlight on current line before printing subsequent line
+            printf '  %s\x1B8\x9BA\x1B7' "${ref[$((idx--))]}"
+            printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
+        }
+      ;;
+      3) # DOWN
+        # Ignore last index
+        ((idx+1==len)) && continue
+        # If cursor on last line of page, increment indices and print
+        ((idx+1==arr_offs+pglim)) && { ((arr_offs++,idx++)); print_pg;} || {
+        # Else remove highlight on current line before printing subsequent line
+          printf '  %s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
+          printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
+        }
+      ;;
+      4) # LEFT
+        printf "\x9BuLEFT"
+      ;;
+      5) # RIGHT
+        printf "\x9BuRIGHT"
+      ;;
+      6) # PGUP
+        ((arr_offs=arr_offs-pglim>0?arr_offs-pglim:0))
+        ((idx=idx-pglim>0?idx-pglim:0))
+        print_pg
+      ;;
+      7) # PGDOWN
+        ((arr_offs+pglim<len-pglim)) && ((arr_offs+=pglim)) ||
+          ((arr_offs=len>pglim?len-pglim:0))
+        ((idx=idx+pglim<len?idx+pglim:len-1))
+        print_pg
+      ;;
+      8) # SPACE
+        [[ ${win_ctx[pg_attr]} == 'multi' ]] && {
+          [[ -n $tmp ]] && tmp="${tmp},$idx" || tmp=$idx
+        }
+      ;;
+      9) # HOME
+        arr_offs=0; idx=0
+        print_pg
+      ;;
+      10) # END
+        ((arr_offs=len>pglim?len-pglim:0,idx=len-1))
+        print_pg
+      ;;
+    esac
+  }
+}
+
 kb_nav() {
   local key tmp
   local -i len pglim
