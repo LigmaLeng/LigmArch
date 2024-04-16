@@ -5,14 +5,14 @@
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
 TEMPLATE_DIR="${CTX_DIR}/options.conf"
-READ_OPTS=(-rs -t 0.05)
+READ_OPTS=(-rs -t 0.03)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F
 declare -a KEYMAP LOCALE MIRRORS
 declare -a setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
-win_ctx=(win_attr '' nref '' pg_attr '' offset '' idx '')
+win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
 
 die() {
   local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
@@ -126,7 +126,7 @@ print_pg() {
   local white_sp
   w=win_ctx ref=${win_ctx[nref]}
   len=${#ref[@]}
-  read -d '' y x m n <<< "${w[win_attr]//,/ }"
+  read -d '' y x m n <<< "${w[attr]//,/ }"
   ((m-=2,n-=2))
   ((lim=w[offset]+m<len?w[offset]+m:len))
   white_sp=$(echoes '\x20' $n)
@@ -137,54 +137,62 @@ print_pg() {
   for((i=0;i++<m;)){ printf '\x1B7%s\x1B8\x9BB' "${white_sp}";}
   printf '\x9B%s;%sH' $((y+1)) $((x+1))
   # Populate page
-  [[ ${w[pg_attr]} == 'single' ]] && {
-    for((i=w[offset]-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
-    # Move cursor up to selection and print highlighted selection
-    printf '\x9B%sA\x1B7  \x9B7m%s\x1B8' $((i-=w[idx])) "${ref[$((lim-i))]}"
-  } || {
-    for((i=w[offset]-1;++i<lim;)){
-      printf '\x1B7 \x10  \x11 %s\x1B8\x9BB' "${ref[$i]}"
-    }
-    printf '\x9B%s;%sH\x1B7' $y $((x+1))
-    [[ "${w[idx]}" =~ ',*'$ ]] && {
-      : "${w[idx]%,*}"
-      for i in ${_//,/ };{
-        ((i<w[offset]||i>lim)) && continue
-        printf '\x9B%sB  \x11\x10 \x1B8' $((i-w[offset]+1))
+  case ${w[pg_type]} in
+    'single')
+      for((i=w[offset]-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
+      # Move cursor up to selection and print highlighted selection
+      printf '\x9B%sA\x1B7  \x9B7m%s\x1B8' $((i-=w[idx])) "${ref[$((lim-i))]}"
+    ;;
+    'multi')
+      for((i=w[offset]-1;++i<lim;)){
+        printf '\x1B7  < > %s\x1B8\x9BB' "${ref[$i]}"
       }
-    }
-    i=${w[idx]##*,}
-    printf '\x9B%sB\x1B7\x9B6C\x9B7m%s\x1B8' $((i-w[offset]+1)) "${ref[$i]}"
-  }
+      printf '\x9B%s;%sH\x1B7' $y $((x+1))
+      for i in ${w[idxs]//,/ };{
+        ((i<w[offset]||i>lim)) && continue
+        printf '\x9B%sB  <\x04>\x1B8' $((i-w[offset]+1))
+      }
+      i=${w[idx]##*,}
+      printf '\x9B%sB\x1B7\x9B6C\x9B7m%s\x1B8' $((i-w[offset]+1)) "${ref[$i]}"
+    ;;
+  esac
   # Don't print cursor indicator if argument provided
   [[ "${1:-}" == 'nocurs' ]] || printf '\xAF\x9BD'
 }
 
 win_ctx_op(){
   local -n w wa
-  local win_attr
+  local attr
   w=win_ctx wa=win_ctx_a
   case $1 in
     'set')
-      read -d '' w[win_attr] w[nref] w[pg_attr] <<< "${2//;/ }"
-      w[offset]=0 w[idx]=0
+      read -d '' w[attr] w[nref] w[pg_type] <<< "${2//;/ }"
+      w[offset]=0 w[idx]=0 w[idxs]=-1
+    ;;
+    'nav')
+      case ${w[pg_type]} in
+        'single') nav_single;;
+        'multi') nav_multi;;
+      esac
+      return $?
     ;;
     'push')
-      : "${w[win_attr]};${w[nref]};${w[pg_attr]};${w[offset]};${w[idx]}"
+      : "${w[attr]};${w[nref]};${w[pg_type]};${w[offset]};${w[idx]};${w[idxs]}"
       win_ctx_a+=("$_")
     ;;
     'pop')
       # Inner dimensions
       for i in ${wa[@]};{
         : "${i//;/ }"
-        read -d '' w[win_attr] w[nref] w[pg_attr] w[offset] w[idx] <<< "$_"
+        read -d '' w[attr] w[nref] w[pg_type] w[offset] w[idx] w[idxs] <<< "$_"
         draw_window
         print_pg 'nocurs'
       }
       # Print cursor indicator for top window context
       printf '\xAF\x9BD'
-      unset win_ctx_a[-1]
+      unset wa[-1]
   esac
+  return 0
 }
 
 exit_prompt() {
@@ -281,7 +289,7 @@ draw_window() {
   local -n w
   local horz vert
   w=win_ctx offset=0
-  read -d '' y x m n <<< "${w[win_attr]//,/ }"
+  read -d '' y x m n <<< "${w[attr]//,/ }"
   horz=$(echoes '\xCD' $((n - 2))) vert="\xBA\x9B$((n-2))C\xBA"
   # Cursor origin and print top border
   printf '\x9B%s;%sH\xC9%s\xBB' $y $x $horz
@@ -293,16 +301,16 @@ draw_window() {
   printf '\x9B%s;%sr\x9B%s;%sH\x1B7' $((y+1)) $((y+m-2)) $((y+1)) $((x+1))
 }
 
-draw_main() {
+seq_main() {
   win_ctx_op 'set' "1,1,${LINES},${COLUMNS};setopt_pairs_f;single"
   draw_window
   for((i=0;i<${#SETOPT_KEYS[@]};i++)){
     setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}${setopt_pairs[${SETOPT_KEYS[$i]}]}"
   }
-  kb_nav
+  win_ctx_op 'nav'
 }
 
-draw_select() {
+seq_select() {
   local -n ref
   local optkey
   optkey=${SETOPT_KEYS[$1]}
@@ -311,8 +319,8 @@ draw_select() {
   # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
   draw_window
-  kb_nav
-  (($?)) || {
+  win_ctx_op 'nav'
+  ((!$?)) || {
     ref=$optkey
     [[ "$optkey" == 'LOCALE' ]] && {
       : "${ref[${win_ctx[idx]}]}"
@@ -352,25 +360,28 @@ get_key() {
 }
 
 nav_single() {
-  local -i len pglim
+  local -i len lim
   local -n ref idx arr_offs
+  read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
   ref=${win_ctx[nref]} idx=win_ctx[idx] arr_offs=win_ctx[offset] len=${#ref[@]}
-  read -d '' _ _ pglim _ <<< "${win_ctx[win_attr]//,/ }"
-  ((pglim-=2))
+  ((lim-=2))
   print_pg
   for((;;)){
     get_key
     case $? in
+      0) # ESC
+        return 0
+      ;;
       1) # ENTER
-        printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
         [[ "${win_ctx[nref]}" == 'setopt_pairs_f' ]] && {
-          draw_select $idx
-        } || return 0
+          printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
+          seq_select $idx
+        } || return 1
       ;;
       2) # UP
         # Ignore 0th index
         ((!idx)) && continue
-        # If cursor on first line of page, decrement indices and print
+        # If cursor on first line of page, decrement indices and print page
         ((idx==arr_offs)) && { ((arr_offs--,idx--)); print_pg;} || {
         # Else remove highlight on current line before printing subsequent line
             printf '  %s\x1B8\x9BA\x1B7' "${ref[$((idx--))]}"
@@ -380,135 +391,103 @@ nav_single() {
       3) # DOWN
         # Ignore last index
         ((idx+1==len)) && continue
-        # If cursor on last line of page, increment indices and print
-        ((idx+1==arr_offs+pglim)) && { ((arr_offs++,idx++)); print_pg;} || {
+        # If cursor on last line of page, increment indices and print page
+        ((idx+1==arr_offs+lim)) && { ((arr_offs++,idx++)); print_pg;} || {
         # Else remove highlight on current line before printing subsequent line
           printf '  %s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
           printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
         }
       ;;
-      4) # LEFT
-        printf "\x9BuLEFT"
-      ;;
-      5) # RIGHT
-        printf "\x9BuRIGHT"
-      ;;
       6) # PGUP
-        ((arr_offs=arr_offs-pglim>0?arr_offs-pglim:0))
-        ((idx=idx-pglim>0?idx-pglim:0))
+        ((arr_offs=arr_offs-lim>0?arr_offs-lim:0))
+        ((idx=idx-lim>0?idx-lim:0))
         print_pg
       ;;
       7) # PGDOWN
-        ((arr_offs+pglim<len-pglim)) && ((arr_offs+=pglim)) ||
-          ((arr_offs=len>pglim?len-pglim:0))
-        ((idx=idx+pglim<len?idx+pglim:len-1))
+        ((arr_offs+lim<len-lim)) && ((arr_offs+=lim)) ||
+          ((arr_offs=len>lim?len-lim:0))
+        ((idx=idx+lim<len?idx+lim:len-1))
         print_pg
-      ;;
-      8) # SPACE
-        [[ ${win_ctx[pg_attr]} == 'multi' ]] && {
-          [[ -n $tmp ]] && tmp="${tmp},$idx" || tmp=$idx
-        }
       ;;
       9) # HOME
         arr_offs=0; idx=0
         print_pg
       ;;
       10) # END
-        ((arr_offs=len>pglim?len-pglim:0,idx=len-1))
+        ((arr_offs=len>lim?len-lim:0,idx=len-1))
         print_pg
       ;;
     esac
   }
 }
 
-kb_nav() {
-  local key tmp
-  local -i len pglim
+nav_multi() {
+  local -i len lim
   local -n ref idx arr_offs
-  ref=${win_ctx[nref]} idx=win_ctx[idx] arr_offs=win_ctx[offset] len=${#ref[@]}
-  read -d '' _ _ pglim _ <<< "${win_ctx[win_attr]//,/ }"
-  ((pglim-=2))
+  idx=win_ctx[idx]  arr_offs=win_ctx[offset] ref=${win_ctx[nref]} len=${#ref[@]}
+  read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
+  ((lim-=2))
   print_pg
   for((;;)){
-    read ${READ_OPTS[@]} -N1 key
-    # Continue loop if read times out from lack of input
-    (($?>128)) && continue
-    # Handling escape characters
-    [[ ${key} == $'\x1B' ]] && {
-      read ${READ_OPTS[@]} -N1
-      # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
-      [[ "${REPLY}" != "[" ]] && return 1 || read ${READ_OPTS[@]} -N2
-      key=$'\x9B'${REPLY}
-    }
-    [[ ${win_ctx[pg_attr]} == 'multi' ]] && {
-      [[ "$idx" =~ ,*$ ]] && tmp="${idx%,*}" || tmp=''
-      idx="${idx##*,}"
-    } || tmp=''
-    case ${key} in
-      # UP
-      k|$'\x9BA')
+    get_key
+    case $? in
+      0) # ESC
+        return 0
+      ;;
+      1) # ENTER
+        return 1
+      ;;
+      2) # UP
         # Ignore 0th index
         ((!idx)) && continue
-        # If cursor on first line of page, decrement indices and print
+        # If cursor on first line of page, decrement indices and print page
         ((idx==arr_offs)) && { ((arr_offs--,idx--)); print_pg;} || {
-        # Else remove highlight on current line before printing subsequent line
-          printf ' '
-          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
-            printf ' %s\x1B8\x9BA\x1B7\xAF' "${ref[$((idx--))]}"
-          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
-            printf ' \x9B7m%s\x1B8' "${ref[$idx]}"
+          # Else remove highlight on current line before printing subsequent line
+          printf ' \x9B5C%s\x1B8\x9BA\x1B7' "${ref[$((idx--))]}"
+          printf '\xAF\x9B5C\x9B7m%s\x1B8' "${ref[$idx]}"
         }
       ;;
-      # DOWN
-      j|$'\x9BB')
+      3) # DOWN
         # Ignore last index
         ((idx+1==len)) && continue
-        # If cursor on last line of page, increment indices and print
-        ((idx+1==arr_offs+pglim)) && { ((arr_offs++,idx++)); print_pg;} || {
-        # Else remove highlight on current line before printing subsequent line
-          printf ' '
-          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
-            printf ' %s\x1B8\x9BB\x1B7\xAF' "${ref[$((idx++))]}"
-          [[ ${win_ctx[pg_attr]} == 'multi' ]] && printf '\x9B4C'
-            printf ' \x9B7m%s\x1B8' "${ref[$idx]}"
+        # If cursor on last line of page, increment indices and print page
+        ((idx+1==arr_offs+lim)) && { ((arr_offs++,idx++)); print_pg;} || {
+          # Else remove highlight on current line before printing subsequent line
+          printf ' \x9B5C%s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
+          printf '\xAF\x9B5C\x9B7m%s\x1B8' "${ref[$idx]}"
         }
       ;;
-      # ENTER
-      $'\n') 
-        printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
-        [[ "${win_ctx[nref]}" == 'setopt_pairs_f' ]] && {
-          draw_select $idx
-        } || return 0
-      ;;
-      # SPACE
-      $'\x20')
-        [[ ${win_ctx[pg_attr]} == 'multi' ]] && {
-          [[ -n $tmp ]] && tmp="${tmp},$idx" || tmp=$idx
-        }
-      ;;
-      # RIGHT
-      l|$'\x9BC') printf "\x9BuRIGHT";;
-      # LEFT
-      h|$'\x9BD') printf "\x9BuLEFT";;
-      # HOME
-      $'\x9B1~') arr_offs=0; idx=0; print_pg;;
-      # END
-      $'\x9B4~') ((arr_offs=len>pglim?len-pglim:0,idx=len-1)); print_pg;;
-      # PGUP
-      $'\x9B5~')
-        ((arr_offs=arr_offs-pglim>0?arr_offs-pglim:0))
-        ((idx=idx-pglim>0?idx-pglim:0))
+      6) # PGUP
+        ((arr_offs=arr_offs-lim>0?arr_offs-lim:0))
+        ((idx=idx-lim>0?idx-lim:0))
         print_pg
       ;;
-      # PGDOWN
-      $'\x9B6~')
-        ((arr_offs+pglim<len-pglim)) && ((arr_offs+=pglim)) ||
-          ((arr_offs=len>pglim?len-pglim:0))
-        ((idx=idx+pglim<len?idx+pglim:len-1))
+      7) # PGDOWN
+        ((arr_offs+lim<len-lim)) && ((arr_offs+=lim)) ||
+          ((arr_offs=len>lim?len-lim:0))
+        ((idx=idx+lim<len?idx+lim:len-1))
+        print_pg
+      ;;
+      8) # SPACE
+        [[ ${win_ctx[idxs]} =~ (^$idx,?|,?$idx) ]] && {
+          win_ctx[idxs]="${win_ctx[idxs]//${BASH_REMATCH[0]}}"
+          [[ -z ${win_ctx[idxs]} ]] && win_ctx[idxs]='-1'
+          printf '\x9B3C \x1B8'
+        } || {
+          printf '\x9B3C\x04\x1B8'
+          [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]=''
+          win_ctx[idxs]+="$idx"
+        }
+      ;;
+      9) # HOME
+        arr_offs=0 idx=0
+        print_pg
+      ;;
+      10) # END
+        ((arr_offs=len>lim?len-lim:0,idx=len-1))
         print_pg
       ;;
     esac
-    [[ -n $tmp ]] && idx="${tmp},$idx"
   }
 }
 
@@ -519,6 +498,6 @@ main() {
   [[ $1 == -d ]] && test_size || set_console
   display_init
   parse_files
-  draw_main
+  seq_main
 }
 main "$@"
