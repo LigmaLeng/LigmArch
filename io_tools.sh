@@ -9,7 +9,7 @@ READ_OPTS=(-rs -t 0.03)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F
-declare -a KEYMAP LOCALE MIRRORS
+declare -a KEYMAP LOCALE MIRRORS KERNEL EDITOR ADDITONAL_PACKAGES
 declare -a setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
@@ -152,7 +152,7 @@ print_pg() {
         ((i<w[offset]||i>lim)) && continue
         printf '\x9B%sB  <\x04>\x1B8' $((i-w[offset]+1))
       }
-      i=${w[idx]##*,}
+      i=${w[idx]}
       printf '\x9B%sB\x1B7\x9B6C\x9B7m%s\x1B8' $((i-w[offset]+1)) "${ref[$i]}"
     ;;
   esac
@@ -227,8 +227,7 @@ exit_prompt() {
 parse_files() {
   local lim
   lim=0
-  [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
-  # Parse config template file
+  [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR # Parse config template file
   while read; do
     case $REPLY in
       # Section header
@@ -249,6 +248,12 @@ parse_files() {
             setopt_pairs[${SETOPT_KEYS[-1]}]+=" ${REPLY//[[:space:]]}"
           }
         done
+        [[ ${SETOPT_KEYS[-1]} =~ ^(KERNEL|EDITOR)$ ]] && {
+          local key=${SETOPT_KEYS[-1]}
+          local -n ref=$key
+          ref=(${setopt_pairs[$key]})
+          setopt_pairs[$key]=${ref[0]}
+        }
       ;;
     esac
   done < "$TEMPLATE_DIR"
@@ -315,17 +320,21 @@ seq_select() {
   local optkey
   optkey=${SETOPT_KEYS[$1]}
   win_ctx_op 'push'
-  [[ "$optkey" =~ ^(MIRRORS|KERNELS)$ ]] && : 'multi' || : 'single'
+  [[ $optkey =~ ^(MIRRORS|ADDITONAL_PACKAGES)$ ]] && : 'multi' || : 'single'
   # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
   draw_window
   win_ctx_op 'nav'
   ((!$?)) || {
     ref=$optkey
-    [[ "$optkey" == 'LOCALE' ]] && {
-      : "${ref[${win_ctx[idx]}]}"
-      setopt_pairs[$optkey]=${_%% *}
-    } || setopt_pairs[$optkey]=${ref[${win_ctx[idx]}]}
+    [[ ${win_ctx[pg_type]} == 'multi' ]] && {
+      :
+    } || {
+      [[ $optkey == 'LOCALE' ]] && {
+        : "${ref[${win_ctx[idx]}]}"
+        setopt_pairs[$optkey]=${_%% *}
+      } || setopt_pairs[$optkey]=${ref[${win_ctx[idx]}]}
+    }
     setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
   }
   win_ctx_op 'pop'
@@ -475,8 +484,8 @@ nav_multi() {
           printf '\x9B3C \x1B8'
         } || {
           printf '\x9B3C\x04\x1B8'
-          [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]=''
-          win_ctx[idxs]+="$idx"
+          [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]="$idx" ||
+            win_ctx[idxs]+=",${idx}" 
         }
       ;;
       9) # HOME
