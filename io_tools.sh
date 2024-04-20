@@ -249,9 +249,9 @@ parse_files() {
           }
         done
         [[ ${SETOPT_KEYS[-1]} =~ ^(KERNEL|EDITOR)$ ]] && {
+          local -n ref
           local key=${SETOPT_KEYS[-1]}
-          local -n ref=$key
-          ref=(${setopt_pairs[$key]})
+          ref=$key; ref=(${setopt_pairs[$key]})
           setopt_pairs[$key]=${ref[0]}
         }
       ;;
@@ -316,24 +316,40 @@ seq_main() {
 }
 
 seq_select() {
-  local -n ref
-  local optkey
+  local -n ref w
+  local optkey i
   optkey=${SETOPT_KEYS[$1]}
   win_ctx_op 'push'
   [[ $optkey =~ ^(MIRRORS|ADDITONAL_PACKAGES)$ ]] && : 'multi' || : 'single'
   # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
+  w=win_ctx
+  [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
+    local -n inner_ref
+    inner_ref=${w[nref]}
+    for((i=-1;++i<${#inner_ref[@]};)){
+      [[ ${setopt_pairs[$optkey]## .*} =~ ${inner_ref[$i]}\s? ]] && {
+        setopt_pairs[$optkey]="${setopt_pairs[$optkey]//${BASH_REMATCH[0]}}"
+        w[idxs]+=",$i"
+      }
+    }
+    w[idxs]="${w[idxs]//-1,}"
+  }
   draw_window
   win_ctx_op 'nav'
   ((!$?)) || {
     ref=$optkey
-    [[ ${win_ctx[pg_type]} == 'multi' ]] && {
-      :
+    [[ ${w[pg_type]} == 'multi' ]] && {
+      setopt_pairs[$optkey]=''
+      ((w[idxs] != -1)) && {
+        for i in ${w[idxs]//,/ };{ setopt_pairs[$optkey]+=" ${ref[$i]}";}
+        setopt_pairs[$optkey]="${setopt_pairs[$optkey]# }"
+      } || setopt_pairs[$optkey]='unset'
     } || {
       [[ $optkey == 'LOCALE' ]] && {
-        : "${ref[${win_ctx[idx]}]}"
+        : "${ref[${w[idx]}]}"
         setopt_pairs[$optkey]=${_%% *}
-      } || setopt_pairs[$optkey]=${ref[${win_ctx[idx]}]}
+      } || setopt_pairs[$optkey]=${ref[${w[idx]}]}
     }
     setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
   }
