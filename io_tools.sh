@@ -243,7 +243,7 @@ parse_files() {
         read setopt_pairs[${SETOPT_KEYS[-1]}]
         while read; do
           [[ -z $REPLY ]] && break || {
-            setopt_pairs[${SETOPT_KEYS[-1]}]+=" ${REPLY//[[:space:]]}"
+            setopt_pairs[${SETOPT_KEYS[-1]}]+="  ${REPLY//[[:space:]]}"
           }
         done
         [[ ${SETOPT_KEYS[-1]} =~ ^(KERNEL|EDITOR)$ ]] && {
@@ -340,8 +340,8 @@ seq_select() {
     [[ ${w[pg_type]} == 'multi' ]] && {
       setopt_pairs[$optkey]=''
       ((w[idxs] != -1)) && {
-        for i in ${w[idxs]//,/ };{ setopt_pairs[$optkey]+=" ${ref[$i]}";}
-        setopt_pairs[$optkey]="${setopt_pairs[$optkey]# }"
+        for i in ${w[idxs]//,/ };{ setopt_pairs[$optkey]+="  ${ref[$i]}";}
+        setopt_pairs[$optkey]="${setopt_pairs[$optkey]#  }"
       } || setopt_pairs[$optkey]='unset'
     } || {
       # If selecting for LOCALE strip trailing string referring to the locales
