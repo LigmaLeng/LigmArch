@@ -104,31 +104,13 @@ display_cleave() {
   }
 }
 
-curs_store() {
-  local -n ref=$1
-  IFS='[;' read -rs -d R -p $'\x9B6n' _ ref[0] ref[1] _
-}
-
-curs_load() {
-  local -n ref=$1
-  printf '\x9B%s;%sH\x1B7' ${ref[0]} ${ref[1]}
-}
-
-get_line() {
-  local -i curs
-  IFS='[;' read -rs -d R -p $'\x9B6n' _ curs _
-  printf $curs
-}
-
 print_pg() {
-  local -i i y x m n len lim
+  local -i i y x m n len lim offs
   local -n w ref
   local white_sp
-  w=win_ctx ref=${win_ctx[nref]}
-  len=${#ref[@]}
+  w=win_ctx; ref=${w[nref]}; len=${#ref[@]}; offs=${w[offset]}
   read -d '' y x m n <<< "${w[attr]//,/ }"
-  ((m-=2,n-=2))
-  ((lim=w[offset]+m<len?w[offset]+m:len))
+  ((m-=2,n-=2)); ((lim=offs+m<len?offs+m:len))
   white_sp=$(echoes '\x20' $n)
   # Return cursor to page origin
   printf '\x9B%s;%sH' $((y+1)) $((x+1))
@@ -139,21 +121,36 @@ print_pg() {
   # Populate page
   case ${w[pg_type]} in
     'single')
-      for((i=w[offset]-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
+      # If on main menu, truncate string if length would exceed available space
+      # Else, iterate over list normally
+      # Note: Both conditions contain similar statements to avoid the
+      #       cost of evaluating unnecessary inner conditionals
+      [[ ${w[nref]} == 'setopt_pairs_f' ]] && {
+        for((i=offs-1;++i<lim;)){
+          : "${ref[$i]}"; ((${#_}>COLUMNS-8)) && : "${_% *} ..."
+          printf '\x1B7  %s\x1B8\x9BB' "$_"
+        }
+        printf '\x9B%sA\x1B7  ' $((i-=w[idx]))
+        : "${ref[$((lim-i))]}"; ((${#_}>COLUMNS-8)) && : "${_% *} ..." || : "$_"
+      } || {
+        for((i=offs-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
+        printf '\x9B%sA\x1B7  ' $((i-=w[idx]))
+        : "${ref[$((lim-i))]}"
+      }
       # Move cursor up to selection and print highlighted selection
-      printf '\x9B%sA\x1B7  \x9B7m%s\x1B8' $((i-=w[idx])) "${ref[$((lim-i))]}"
+      printf '\x9B7m%s\x1B8' "$_"
     ;;
     'multi')
-      for((i=w[offset]-1;++i<lim;)){
+      for((i=offs-1;++i<lim;)){
         printf '\x1B7  < > %s\x1B8\x9BB' "${ref[$i]}"
       }
       printf '\x9B%s;%sH\x1B7' $y $((x+1))
       for i in ${w[idxs]//,/ };{
-        ((i<w[offset]||i>lim)) && continue
-        printf '\x9B%sB  <\x04>\x1B8' $((i-w[offset]+1))
+        ((i<offs||i>lim)) && continue
+        printf '\x9B%sB  <\x04>\x1B8' $((i-offs+1))
       }
       i=${w[idx]}
-      printf '\x9B%sB\x1B7\x9B6C\x9B7m%s\x1B8' $((i-w[offset]+1)) "${ref[$i]}"
+      printf '\x9B%sB\x1B7\x9B6C\x9B7m%s\x1B8' $((i-offs+1)) "${ref[$i]}"
     ;;
   esac
   # Don't print cursor indicator if argument provided
@@ -227,15 +224,16 @@ exit_prompt() {
 parse_files() {
   local lim
   lim=0
-  [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR # Parse config template file
+  # Create cache directory if non-existent and parse config file
+  [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
   while read; do
     case $REPLY in
-      # Section header
+      # Brackets demarcate separate sections while parsing values that
+      # correspond to the resulting header string after trimming '[' & ']'
       '['*)
-        # Trim brackets
         : "${REPLY#[}"
         SETOPT_KEYS+=("${_%]}")
-        # Keep track of longest optkey
+        # Keep track of longest optkey for page formatting purposes
         ((lim=${#SETOPT_KEYS[-1]}>lim?${#SETOPT_KEYS[-1]}:$lim))
       ;;
       value*)
@@ -249,9 +247,9 @@ parse_files() {
           }
         done
         [[ ${SETOPT_KEYS[-1]} =~ ^(KERNEL|EDITOR)$ ]] && {
-          local -n ref
           local key=${SETOPT_KEYS[-1]}
-          ref=$key; ref=(${setopt_pairs[$key]})
+          local -n ref=$key
+          ref=(${setopt_pairs[$key]})
           setopt_pairs[$key]=${ref[0]}
         }
       ;;
@@ -261,15 +259,15 @@ parse_files() {
   for i in ${SETOPT_KEYS[@]};{
     SETOPT_KEYS_F+=("${i/_/ }$(echoes '\x20' $((lim-${#i}+3)))")
   }
-  # Retrieve currently active mirrors
+  # Retrieve currently active mirrors from cache if available
+  # Else, retrieve current mirrorlist from official mirrorlist generator page
   [[ -a "${CACHE_DIR}/mirrorlist" ]] && {
     while read; do MIRRORS+=("$REPLY"); done < "${CACHE_DIR}/mirror_countries"
   } || {
     exec {mirror_fd}<> <(curl -s "https://archlinux.org/mirrorlist/all/https/")
     # Discard lines up to first comment containing a named country
     while read -u $mirror_fd; do [[ "$REPLY" == '## Worldwide' ]] && break; done
-    # Append names of countries with active mirrors to array
-    # while appending lines to cache files
+    # Append countries with active mirrors to list while caching all server URLs
     while read -t 0 -u $mirror_fd && read -u $mirror_fd; do
       [[ "$REPLY" == '## '* ]] && {
         MIRRORS+=("${REPLY#* }")
@@ -346,9 +344,10 @@ seq_select() {
         setopt_pairs[$optkey]="${setopt_pairs[$optkey]# }"
       } || setopt_pairs[$optkey]='unset'
     } || {
+      # If selecting for LOCALE strip trailing string referring to the locales
+      # corresponding character mapping as well as any remaining whitespace
       [[ $optkey == 'LOCALE' ]] && {
-        : "${ref[${w[idx]}]}"
-        setopt_pairs[$optkey]=${_%% *}
+        : "${ref[${w[idx]}]}"; setopt_pairs[$optkey]=${_%% *}
       } || setopt_pairs[$optkey]=${ref[${w[idx]}]}
     }
     setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
@@ -386,9 +385,9 @@ get_key() {
 
 nav_single() {
   local -i len lim
-  local -n ref idx arr_offs
+  local -n ref idx offs
   read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
-  ref=${win_ctx[nref]} idx=win_ctx[idx] arr_offs=win_ctx[offset] len=${#ref[@]}
+  ref=${win_ctx[nref]} idx=win_ctx[idx] offs=win_ctx[offset] len=${#ref[@]}
   ((lim-=2))
   print_pg
   for((;;)){
@@ -398,7 +397,7 @@ nav_single() {
         return 0
       ;;
       1) # ENTER
-        [[ "${win_ctx[nref]}" == 'setopt_pairs_f' ]] && {
+        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
           printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
           seq_select $idx
         } || return 1
@@ -407,39 +406,47 @@ nav_single() {
         # Ignore 0th index
         ((!idx)) && continue
         # If cursor on first line of page, decrement indices and print page
-        ((idx==arr_offs)) && { ((arr_offs--,idx--)); print_pg;} || {
-        # Else remove highlight on current line before printing subsequent line
-            printf '  %s\x1B8\x9BA\x1B7' "${ref[$((idx--))]}"
-            printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
-        }
-      ;;
+        # Else, remove highlight on current line before printing subsequent line
+        ((idx==offs)) && { ((offs--,idx--)); print_pg; continue;} ||
+          : "  ${ref[$((idx--))]},A"
+      ;;&
       3) # DOWN
         # Ignore last index
         ((idx+1==len)) && continue
         # If cursor on last line of page, increment indices and print page
-        ((idx+1==arr_offs+lim)) && { ((arr_offs++,idx++)); print_pg;} || {
-        # Else remove highlight on current line before printing subsequent line
-          printf '  %s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
-          printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
+        # Else, remove highlight on current line before printing subsequent line
+        ((idx+1==offs+lim)) && { ((offs++,idx++)); print_pg; continue;} ||
+          : "  ${ref[$((idx++))]},B"
+      ;&
+      2) # UP/DOWN fallthrough
+        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
+          ((${#_}>COLUMNS-6)) && : "${_% *} ...${_: -2}"
+          ((${#ref[$idx]}>COLUMNS-8)) && : "$_,${ref[$idx]% *} ..."
+        } || : "$_,${ref[$idx]}"
+        [[ $_ =~ ^(  .*),(.),(.*)$ ]] && {
+          printf '%s\x1B8\x9B%s\x1B7' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+          printf '\xAF \x9B7m%s\x1B8' "${BASH_REMATCH[3]}"
         }
+        #printf '  %s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
+        #printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
       ;;
       6) # PGUP
-        ((arr_offs=arr_offs-lim>0?arr_offs-lim:0))
+        ((offs=offs-lim>0?offs-lim:0))
         ((idx=idx-lim>0?idx-lim:0))
         print_pg
       ;;
       7) # PGDOWN
-        ((arr_offs+lim<len-lim)) && ((arr_offs+=lim)) ||
-          ((arr_offs=len>lim?len-lim:0))
+        ((offs+lim<len-lim)) && ((offs+=lim)) ||
+          ((offs=len>lim?len-lim:0))
         ((idx=idx+lim<len?idx+lim:len-1))
         print_pg
       ;;
       9) # HOME
-        arr_offs=0; idx=0
+        offs=0; idx=0
         print_pg
       ;;
       10) # END
-        ((arr_offs=len>lim?len-lim:0,idx=len-1))
+        ((offs=len>lim?len-lim:0,idx=len-1))
         print_pg
       ;;
     esac
@@ -448,8 +455,8 @@ nav_single() {
 
 nav_multi() {
   local -i len lim
-  local -n ref idx arr_offs
-  idx=win_ctx[idx]  arr_offs=win_ctx[offset] ref=${win_ctx[nref]} len=${#ref[@]}
+  local -n ref idx offs
+  idx=win_ctx[idx]  offs=win_ctx[offset] ref=${win_ctx[nref]} len=${#ref[@]}
   read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
   ((lim-=2))
   print_pg
@@ -466,8 +473,8 @@ nav_multi() {
         # Ignore 0th index
         ((!idx)) && continue
         # If cursor on first line of page, decrement indices and print page
-        ((idx==arr_offs)) && { ((arr_offs--,idx--)); print_pg;} || {
-          # Else remove highlight on current line before printing subsequent line
+        # Else, remove highlight on current line before printing subsequent line
+        ((idx==offs)) && { ((offs--,idx--)); print_pg;} || {
           printf ' \x9B5C%s\x1B8\x9BA\x1B7' "${ref[$((idx--))]}"
           printf '\xAF\x9B5C\x9B7m%s\x1B8' "${ref[$idx]}"
         }
@@ -476,20 +483,20 @@ nav_multi() {
         # Ignore last index
         ((idx+1==len)) && continue
         # If cursor on last line of page, increment indices and print page
-        ((idx+1==arr_offs+lim)) && { ((arr_offs++,idx++)); print_pg;} || {
-          # Else remove highlight on current line before printing subsequent line
+        # Else, remove highlight on current line before printing subsequent line
+        ((idx+1==offs+lim)) && { ((offs++,idx++)); print_pg;} || {
           printf ' \x9B5C%s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
           printf '\xAF\x9B5C\x9B7m%s\x1B8' "${ref[$idx]}"
         }
       ;;
       6) # PGUP
-        ((arr_offs=arr_offs-lim>0?arr_offs-lim:0))
+        ((offs=offs-lim>0?offs-lim:0))
         ((idx=idx-lim>0?idx-lim:0))
         print_pg
       ;;
       7) # PGDOWN
-        ((arr_offs+lim<len-lim)) && ((arr_offs+=lim)) ||
-          ((arr_offs=len>lim?len-lim:0))
+        ((offs+lim<len-lim)) && ((offs+=lim)) ||
+          ((offs=len>lim?len-lim:0))
         ((idx=idx+lim<len?idx+lim:len-1))
         print_pg
       ;;
@@ -505,11 +512,11 @@ nav_multi() {
         }
       ;;
       9) # HOME
-        arr_offs=0 idx=0
+        offs=0 idx=0
         print_pg
       ;;
       10) # END
-        ((arr_offs=len>lim?len-lim:0,idx=len-1))
+        ((offs=len>lim?len-lim:0,idx=len-1))
         print_pg
       ;;
     esac

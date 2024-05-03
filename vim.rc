@@ -96,7 +96,7 @@ nnoremap <Leader>htn :q<CR>
 nnoremap <Leader>tns :wq<CR>
 nnoremap <Leader>ueo :qa<CR>
 "   Pasting
-xnoremap <Leader>p "_dp
+xnoremap <Leader>p "_dP
 "   Autoclose
 inoremap () ()<LEFT>
 inoremap {} {}<LEFT>
