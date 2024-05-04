@@ -9,7 +9,7 @@ READ_OPTS=(-rs -t 0.03)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F
-declare -a KEYMAP LOCALE MIRRORS KERNEL EDITOR ADDITONAL_PACKAGES
+declare -a KEYMAP LOCALE MIRRORS KERNEL EDITOR PACKAGES
 declare -a setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
@@ -246,11 +246,11 @@ parse_files() {
             setopt_pairs[${SETOPT_KEYS[-1]}]+="  ${REPLY//[[:space:]]}"
           }
         done
-        [[ ${SETOPT_KEYS[-1]} =~ ^(KERNEL|EDITOR)$ ]] && {
+        [[ ${SETOPT_KEYS[-1]} =~ ^(KERNEL|EDITOR|PACKAGES)$ ]] && {
           local key=${SETOPT_KEYS[-1]}
           local -n ref=$key
           ref=(${setopt_pairs[$key]})
-          setopt_pairs[$key]=${ref[0]}
+          [[ ${key} != 'PACKAGES' ]] && setopt_pairs[$key]=${ref[0]}
         }
       ;;
     esac
@@ -318,7 +318,7 @@ seq_select() {
   local optkey i
   optkey=${SETOPT_KEYS[$1]}
   win_ctx_op 'push'
-  [[ $optkey =~ ^(MIRRORS|ADDITONAL_PACKAGES)$ ]] && : 'multi' || : 'single'
+  [[ $optkey =~ ^(MIRRORS|PACKAGES)$ ]] && : 'multi' || : 'single'
   # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
   w=win_ctx ref=$optkey
