@@ -149,11 +149,11 @@ silent! normal! zE
 224,289fold
 290,306fold
 307,315fold
-316,357fold
-358,385fold
-386,455fold
-456,525fold
-526,535fold
+316,356fold
+357,384fold
+385,454fold
+455,523fold
+524,533fold
 let &fdl = &fdl
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
