@@ -501,7 +501,7 @@ nav_multi() {
         print_pg
       ;;
       8) # SPACE
-        [[ ${win_ctx[idxs]} =~ (^$idx,?|,?$idx) ]] && {
+        [[ ${win_ctx[idxs]} =~ ^($idx,?|,?$idx) ]] && {
           win_ctx[idxs]="${win_ctx[idxs]//${BASH_REMATCH[0]}}"
           [[ -z ${win_ctx[idxs]} ]] && win_ctx[idxs]='-1'
           printf '\x9B3C \x1B8'
