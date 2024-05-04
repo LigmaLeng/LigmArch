@@ -314,35 +314,34 @@ seq_main() {
 }
 
 seq_select() {
-  local -n ref w
+  local -n w ref
   local optkey i
   optkey=${SETOPT_KEYS[$1]}
   win_ctx_op 'push'
   [[ $optkey =~ ^(MIRRORS|ADDITONAL_PACKAGES)$ ]] && : 'multi' || : 'single'
   # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
-  w=win_ctx
+  w=win_ctx ref=$optkey
   [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
-    local -n inner_ref
-    inner_ref=${w[nref]}
-    for((i=-1;++i<${#inner_ref[@]};)){
-      [[ ${setopt_pairs[$optkey]## .*} =~ ${inner_ref[$i]}\s? ]] && {
-        setopt_pairs[$optkey]="${setopt_pairs[$optkey]//${BASH_REMATCH[0]}}"
+    for((i=-1;++i<${#ref[@]};)){
+      [[ ${setopt_pairs[$optkey]## .*} =~ ${ref[$i]}\s? ]] && {
+        setopt_pairs[$optkey]="${setopt_pairs[$optkey]/${BASH_REMATCH[0]}}"
         w[idxs]+=",$i"
       }
     }
-    w[idxs]="${w[idxs]//-1,}"
+    w[idxs]="${w[idxs]#-1,}"
   }
   draw_window
   win_ctx_op 'nav'
   ((!$?)) || {
-    ref=$optkey
     [[ ${w[pg_type]} == 'multi' ]] && {
       setopt_pairs[$optkey]=''
-      ((w[idxs] != -1)) && {
-        for i in ${w[idxs]//,/ };{ setopt_pairs[$optkey]+="  ${ref[$i]}";}
+      [[ ${w[idxs]} == '-1' ]] && setopt_pairs[$optkey]='unset' || {
+        while read; do
+          setopt_pairs[$optkey]+="  ${ref[$REPLY]}"
+        done < <(sort -n <<< "${w[idxs]//,/$'\n'}")
         setopt_pairs[$optkey]="${setopt_pairs[$optkey]#  }"
-      } || setopt_pairs[$optkey]='unset'
+      }
     } || {
       # If selecting for LOCALE strip trailing string referring to the locales
       # corresponding character mapping as well as any remaining whitespace
@@ -501,15 +500,14 @@ nav_multi() {
         print_pg
       ;;
       8) # SPACE
-        [[ ${win_ctx[idxs]} =~ ^($idx,?|,?$idx) ]] && {
-          win_ctx[idxs]="${win_ctx[idxs]//${BASH_REMATCH[0]}}"
-          [[ -z ${win_ctx[idxs]} ]] && win_ctx[idxs]='-1'
-          printf '\x9B3C \x1B8'
-        } || {
-          printf '\x9B3C\x04\x1B8'
-          [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]="$idx" ||
-            win_ctx[idxs]+=",${idx}" 
+        [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]="$idx" || {
+          [[ ${win_ctx[idxs]} =~ (^${idx},?|,?${idx}) ]] && {
+            win_ctx[idxs]="${win_ctx[idxs]//${BASH_REMATCH[0]}}"
+            [[ -z ${win_ctx[idxs]} ]] && win_ctx[idxs]='-1'
+            printf '\x9B3C \x1B8' && continue
+          } || win_ctx[idxs]+=",${idx}"
         }
+        printf '\x9B3C\x04\x1B8'
       ;;
       9) # HOME
         offs=0 idx=0
