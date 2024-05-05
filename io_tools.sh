@@ -5,7 +5,7 @@
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
 TEMPLATE_DIR="${CTX_DIR}/options.conf"
-READ_OPTS=(-rs -t 0.03)
+READ_OPTS=(-rs -t 0.02)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F
@@ -15,7 +15,8 @@ declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
 
 die() {
-  local -a bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
+  local -a bash_trace
+  bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
   printf '\x9B%s' m 2J r
   printf '%s: line %d: %s: %s\n' ${bash_trace[@]} "${1-Died}" >&2
   printf 'press any key to continue'
@@ -27,11 +28,12 @@ echoes()for((i=0;i++<$2;)){ printf $1;}
 nap() {
   # Open file descriptor if doesn't exist pipe empty subshell
   [[ -n "${nap_fd:-}" ]] || { exec {nap_fd}<> <(:);}
-  # Attempt to read from empty file descriptor indefinitely if no timeout given
+  # Attempt to read from empty file descriptor for 1 ms if no timeout specified
   read -t ${1:-0.001} -u $nap_fd || :
 }
 
 set_console() {
+  # Use ANSI-C standard for language collation
   readonly LC_ALL=C
   # Backup and modify stty settings for io operations (restored on exit)
   readonly STTY_BAK=$(stty -g)
@@ -79,38 +81,37 @@ display_init() {
 }
 
 display_cleave() {
-  local fissure
+  local fissure i lim
   fissure=$(echoes '\xC4' $((COLUMNS-2)))
-  # Cursor on transverse plane
+  # Place cursor on transverse plane
   printf '\x9B%s;H' $TRANSVERSE
   # Grow fissure from from saggital plane laterally along transverse plane
-  for((i=0;i<SAGITTAL-1;i++)){
+  ((i=-1,lim=SAGITTAL-1))
+  for((i;++i<lim;)){
     printf '\x9B%sG\xCD' $((SAGITTAL-i)) $((SAGITTAL+i+!(COLUMNS&1)))
     nap 0.003
   }
   # Ligate fissure
-  echoes '\xCE\x0D' 2 
-  nap 0.1
+  echoes '\xCE\x0D' 2 && nap 0.1
   # Pilot cleavage and swap ligatures
   printf '\xD0%b' $fissure '\n'
   printf '\xD2%b' $fissure '\x9BA\x0D'
   # Widen pilot cleave if lines are odd
   # A M B L: up  delete_line  down  insert_line
-  ((LINES&1)) && printf '\x9B%s' A M B L A
+  ((LINES&1)) && printf '\x9B%s' {A,M,B,L,A}
   # Continue widening
-  for((i=0;i<(TRANSVERSE>>2)-(LINES&1);i++)){
-    printf '\x9B%s' A M B 2L A
-    nap 0.02
-  }
+  ((i=0,lim=(TRANSVERSE>>2)-(LINES&1)))
+  for((i;i++<lim;)){ printf '\x9B%s' {A,M,B,2L,A}; nap 0.02;}
 }
 
 print_pg() {
-  local -i i y x m n len lim offs
+  local i y x m n lim offs
   local -n w ref
   local white_sp
-  w=win_ctx; ref=${w[nref]}; len=${#ref[@]}; offs=${w[offset]}
+  w=win_ctx; ref=${w[nref]}; offs=${w[offset]}
   read -d '' y x m n <<< "${w[attr]//,/ }"
-  ((m-=2,n-=2)); ((lim=offs+m<len?offs+m:len))
+  ((m-=2,n-=2))
+  ((lim=offs+m<${#ref[@]}?offs+m:${#ref[@]}))
   white_sp=$(echoes '\x20' $n)
   # Return cursor to page origin
   printf '\x9B%s;%sH' $((y+1)) $((x+1))
@@ -141,9 +142,8 @@ print_pg() {
       printf '\x9B7m%s\x1B8' "$_"
     ;;
     'multi')
-      for((i=offs-1;++i<lim;)){
-        printf '\x1B7  < > %s\x1B8\x9BB' "${ref[$i]}"
-      }
+      ((i=offs-1))
+      for((i;++i<lim;)){ printf '\x1B7  < > %s\x1B8\x9BB' "${ref[$i]}";}
       printf '\x9B%s;%sH\x1B7' $y $((x+1))
       for i in ${w[idxs]//,/ };{
         ((i<offs||i>lim)) && continue
@@ -160,11 +160,11 @@ print_pg() {
 win_ctx_op(){
   local -n w wa
   local attr
-  w=win_ctx wa=win_ctx_a
+  w=win_ctx; wa=win_ctx_a
   case $1 in
     'set')
       read -d '' w[attr] w[nref] w[pg_type] <<< "${2//;/ }"
-      w[offset]=0 w[idx]=0 w[idxs]=-1
+      ((w[offset]=0,w[idx]=0,w[idxs]=-1))
     ;;
     'nav')
       case ${w[pg_type]} in
@@ -188,6 +188,7 @@ win_ctx_op(){
       # Print cursor indicator for top window context
       printf '\xAF\x9BD'
       unset wa[-1]
+    ;;
   esac
   return 0
 }
@@ -195,7 +196,7 @@ win_ctx_op(){
 exit_prompt() {
   local exit_query exit_opts
   [[ ${FUNCNAME[1]} == 'exit_prompt' ]] && return
-  exit_query='Abort setup process' exit_opts=('(Y|y)es' '(N|n)o')
+  exit_query='Abort setup process'; exit_opts=('(Y|y)es' '(N|n)o')
   win_ctx_op 'push'
   display_cleave
   # Center cursor
@@ -203,7 +204,7 @@ exit_prompt() {
   # Pad strings if columns are odd
   ((COLUMNS&1)) && { exit_query+=' '; exit_opts[0]+=' ';}
   # Finalise query and concatenate option strings
-  exit_query+='?' exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
+  exit_query+='?'; exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
   # Center and print query and option strings based on length
   printf '\x9B%sD%s' $(((${#exit_query}>>1)-!(COLUMNS&1))) "$exit_query"
   printf '\x9B%s' ${SAGITTAL}G 2B
@@ -222,45 +223,45 @@ exit_prompt() {
 }
 
 parse_files() {
-  local lim
+  local lim key
   lim=0
-  # Create cache directory if non-existent and parse config file
+  # Create cache directory if non-existent
   [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
+  # Parse config file
   while read; do
     case $REPLY in
       # Brackets demarcate separate sections while parsing values that
       # correspond to the resulting header string after trimming '[' & ']'
       '['*)
         : "${REPLY#[}"
-        SETOPT_KEYS+=("${_%]}")
+        key=("${_%]}")
+        SETOPT_KEYS+=("$key")
         # Keep track of longest optkey for page formatting purposes
-        ((lim=${#SETOPT_KEYS[-1]}>lim?${#SETOPT_KEYS[-1]}:$lim))
+        ((lim=${#key}>lim?${#key}:$lim))
       ;;
       value*)
-        setopt_pairs[${SETOPT_KEYS[-1]}]=${REPLY#*= }
+        setopt_pairs[$key]=${REPLY#*= }
       ;;
       list*)
-        read setopt_pairs[${SETOPT_KEYS[-1]}]
+        read setopt_pairs[$key]
         while read; do
-          [[ -z $REPLY ]] && break || {
-            setopt_pairs[${SETOPT_KEYS[-1]}]+="  ${REPLY//[[:space:]]}"
-          }
+          [[ -z $REPLY ]] && {
+            setopt_pairs[$key]="${setopt_pairs[$key]#  }" && break
+          } || { setopt_pairs[$key]+="  ${REPLY//[[:space:]]}";}
         done
-        [[ ${SETOPT_KEYS[-1]} =~ ^(KERNEL|EDITOR|PACKAGES)$ ]] && {
-          local key=${SETOPT_KEYS[-1]}
+        [[ $key =~ ^(KERNEL|EDITOR|PACKAGES) ]] && {
           local -n ref=$key
           ref=(${setopt_pairs[$key]})
-          [[ ${key} != 'PACKAGES' ]] && setopt_pairs[$key]=${ref[0]}
+          [[ $key != 'PACKAGES' ]] && setopt_pairs[$key]=${ref[0]}
         }
       ;;
     esac
   done < "$TEMPLATE_DIR"
   # Format spacing for printing setup options
   for i in ${SETOPT_KEYS[@]};{
-    SETOPT_KEYS_F+=("${i/_/ }$(echoes '\x20' $((lim-${#i}+3)))")
-  }
+    SETOPT_KEYS_F+=("${i/_/ }$(echoes '\x20' $((lim-${#i}+3)))");}
   # Retrieve currently active mirrors from cache if available
-  # Else, retrieve current mirrorlist from official mirrorlist generator page
+  # Else retrieve current mirrorlist from official mirrorlist generator page
   [[ -a "${CACHE_DIR}/mirrorlist" ]] && {
     while read; do MIRRORS+=("$REPLY"); done < "${CACHE_DIR}/mirror_countries"
   } || {
@@ -280,7 +281,7 @@ parse_files() {
   # Get kbd keymap files
   KEYMAP=($(localectl list-keymaps))
   # Parse supported locales and format spacing for printing
-  lim=$((SAGITTAL-4))
+  ((lim=SAGITTAL-4))
   while read; do
     LOCALE+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
@@ -288,12 +289,10 @@ parse_files() {
 }
 
 draw_window() {
-  local -i y x m n offset
-  local -n w
-  local horz vert
-  w=win_ctx offset=0
-  read -d '' y x m n <<< "${w[attr]//,/ }"
-  horz=$(echoes '\xCD' $((n - 2))) vert="\xBA\x9B$((n-2))C\xBA"
+  local y x m n offset horz vert
+  read -d '' y x m n <<< "${win_ctx[attr]//,/ }"
+  ((offset=0))
+  horz=$(echoes '\xCD' $((n-2))); vert="\xBA\x9B$((n-2))C\xBA"
   # Cursor origin and print top border
   printf '\x9B%s;%sH\xC9%s\xBB' $y $x $horz
   # Print vertical borders on every line but first and last
@@ -316,15 +315,15 @@ seq_main() {
 seq_select() {
   local -n w ref
   local optkey i
-  optkey=${SETOPT_KEYS[$1]}
+  optkey=${SETOPT_KEYS[$1]}; ref=$optkey; w=win_ctx
   win_ctx_op 'push'
+  # Refer to corresponding arrays and attributes belonging to option key
   [[ $optkey =~ ^(MIRRORS|PACKAGES)$ ]] && : 'multi' || : 'single'
-  # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
-  w=win_ctx ref=$optkey
+  # If option supports multiple values, convert string values to indices
   [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
     for((i=-1;++i<${#ref[@]};)){
-      [[ ${setopt_pairs[$optkey]## .*} =~ ${ref[$i]}\s? ]] && {
+      [[ "${setopt_pairs[$optkey]}" =~ ^${ref[$i]}[[:space:]]* ]] && {
         setopt_pairs[$optkey]="${setopt_pairs[$optkey]/${BASH_REMATCH[0]}}"
         w[idxs]+=",$i"
       }
@@ -336,6 +335,7 @@ seq_select() {
   ((!$?)) || {
     [[ ${w[pg_type]} == 'multi' ]] && {
       setopt_pairs[$optkey]=''
+      # If option supports multiple values, convert indices to string values
       [[ ${w[idxs]} == '-1' ]] && setopt_pairs[$optkey]='unset' || {
         while read; do
           setopt_pairs[$optkey]+="  ${ref[$REPLY]}"
@@ -383,10 +383,10 @@ get_key() {
 }
 
 nav_single() {
-  local -i len lim
   local -n ref idx offs
+  local len lim
+  ref=${win_ctx[nref]}; idx=win_ctx[idx]; offs=win_ctx[offset]; len=${#ref[@]}
   read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
-  ref=${win_ctx[nref]} idx=win_ctx[idx] offs=win_ctx[offset] len=${#ref[@]}
   ((lim-=2))
   print_pg
   for((;;)){
@@ -404,30 +404,31 @@ nav_single() {
       2) # UP
         # Ignore 0th index
         ((!idx)) && continue
-        # If cursor on first line of page, decrement indices and print page
+        # If cursor position at top of page, decrement indices and print page
         # Else, remove highlight on current line before printing subsequent line
+        # printing behaviour handled in fallthrough case statement below
         ((idx==offs)) && { ((offs--,idx--)); print_pg; continue;} ||
           : "  ${ref[$((idx--))]},A"
       ;;&
       3) # DOWN
         # Ignore last index
         ((idx+1==len)) && continue
-        # If cursor on last line of page, increment indices and print page
+        # If cursor position at bottom of page, increment indices and print page
         # Else, remove highlight on current line before printing subsequent line
+        # printing behaviour handled in fallthrough case statement below
         ((idx+1==offs+lim)) && { ((offs++,idx++)); print_pg; continue;} ||
           : "  ${ref[$((idx++))]},B"
       ;&
       2) # UP/DOWN fallthrough
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
           ((${#_}>COLUMNS-6)) && : "${_% *} ...${_: -2}"
-          ((${#ref[$idx]}>COLUMNS-8)) && : "$_,${ref[$idx]% *} ..."
+          ((${#ref[$idx]}>COLUMNS-8)) && : "$_,${ref[$idx]% *} ..." ||
+            : "$_,${ref[$idx]}" 
         } || : "$_,${ref[$idx]}"
         [[ $_ =~ ^(  .*),(.),(.*)$ ]] && {
           printf '%s\x1B8\x9B%s\x1B7' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
           printf '\xAF \x9B7m%s\x1B8' "${BASH_REMATCH[3]}"
         }
-        #printf '  %s\x1B8\x9BB\x1B7' "${ref[$((idx++))]}"
-        #printf '\xAF \x9B7m%s\x1B8' "${ref[$idx]}"
       ;;
       6) # PGUP
         ((offs=offs-lim>0?offs-lim:0))
@@ -453,9 +454,9 @@ nav_single() {
 }
 
 nav_multi() {
-  local -i len lim
   local -n ref idx offs
-  idx=win_ctx[idx]  offs=win_ctx[offset] ref=${win_ctx[nref]} len=${#ref[@]}
+  local len lim
+  ref=${win_ctx[nref]}; idx=win_ctx[idx]; offs=win_ctx[offset]; len=${#ref[@]}
   read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
   ((lim-=2))
   print_pg
@@ -501,8 +502,13 @@ nav_multi() {
       ;;
       8) # SPACE
         [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]="$idx" || {
-          [[ ${win_ctx[idxs]} =~ (^${idx},?|,?${idx}) ]] && {
-            win_ctx[idxs]="${win_ctx[idxs]//${BASH_REMATCH[0]}}"
+          [[ ${win_ctx[idxs]} =~ (^${idx},|,${idx},|,${idx}$|^${idx}$) ]] && {
+            : "${BASH_REMATCH[0]}"
+            [[ ${_:: -1} == ',' ]] && {
+              [[ ${_:: 1} == ',' ]] && : "${win_ctx[idxs]/$_/,}" ||
+                : "${win_ctx[idxs]#$_}"
+            } || : "${win_ctx[idxs]%$_}"
+            win_ctx[idxs]="$_"
             [[ -z ${win_ctx[idxs]} ]] && win_ctx[idxs]='-1'
             printf '\x9B3C \x1B8' && continue
           } || win_ctx[idxs]+=",${idx}"
