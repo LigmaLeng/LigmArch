@@ -89,10 +89,10 @@ display_cleave() {
   ((i=-1,lim=SAGITTAL-1))
   for((i;++i<lim;)){
     printf '\x9B%sG\xCD' $((SAGITTAL-i)) $((SAGITTAL+i+!(COLUMNS&1)))
-    nap 0.003
+    nap 0.002
   }
   # Ligate fissure
-  echoes '\xCE\x0D' 2 && nap 0.1
+  echoes '\xCE\x0D' 2 && nap 0.075
   # Pilot cleavage and swap ligatures
   printf '\xD0%b' $fissure '\n'
   printf '\xD2%b' $fissure '\x9BA\x0D'
@@ -101,7 +101,7 @@ display_cleave() {
   ((LINES&1)) && printf '\x9B%s' {A,M,B,L,A}
   # Continue widening
   ((i=0,lim=(TRANSVERSE>>2)-(LINES&1)))
-  for((i;i++<lim;)){ printf '\x9B%s' {A,M,B,2L,A}; nap 0.02;}
+  for((i;i++<lim;)){ printf '\x9B%s' {A,M,B,2L,A}; nap 0.015;}
 }
 
 print_pg() {
@@ -318,8 +318,10 @@ seq_select() {
   optkey=${SETOPT_KEYS[$1]}; ref=$optkey; w=win_ctx
   win_ctx_op 'push'
   # Refer to corresponding arrays and attributes belonging to option key
-  [[ $optkey =~ ^(MIRRORS|PACKAGES)$ ]] && : 'multi' || : 'single'
-  win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
+  : "2,${SAGITTAL},$((${#ref[@]}<LINES-4?${#ref[@]}+2:LINES-2)),$((SAGITTAL-1))"
+  [[ $optkey =~ ^(MIRRORS|PACKAGES)$ ]] && {
+    : "$_;${optkey};multi";} || : "$_;${optkey};single"
+  win_ctx_op 'set' "$_"
   # If option supports multiple values, convert string values to indices
   [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
     for((i=-1;++i<${#ref[@]};)){
@@ -352,6 +354,12 @@ seq_select() {
     setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
   }
   win_ctx_op 'pop'
+}
+
+seq_ttin() {
+  local -n w
+  local str optkey
+  optkey=${SETOPT_KEYS[$1]}; w=win_ctx
 }
 
 get_key() {
@@ -398,7 +406,8 @@ nav_single() {
       1) # ENTER
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
           printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
-          seq_select $idx
+          [[ ${SETOPT_KEYS[$idx]} =~ (NAME|PASS)$ ]] && seq_ttin $idx ||
+            seq_select $idx
         } || return 1
       ;;
       2) # UP
