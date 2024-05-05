@@ -22,7 +22,9 @@ die() {
   for((;;)){ read ${READ_OPTS[@]} -N1; (($?>128)) || exit 1;}
 }
 
-echoes()for((i=0;i++<$2;)){ printf $1;}
+echoes(){
+  for((i=0;i++<$2;)){ printf $1;}
+}
 
 nap() {
   # Open file descriptor if doesn't exist pipe empty subshell
@@ -105,12 +107,16 @@ display_cleave() {
 }
 
 print_pg() {
-  local -i i y x m n len lim offs
   local -n w ref
+  local -i i y x m n len lim offs
   local white_sp
-  w=win_ctx; ref=${w[nref]}; len=${#ref[@]}; offs=${w[offset]}
+  w=win_ctx
+  ref=${w[nref]}
   read -d '' y x m n <<< "${w[attr]//,/ }"
-  ((m-=2,n-=2)); ((lim=offs+m<len?offs+m:len))
+  len=${#ref[@]}
+  offs=${w[offset]}
+  ((m-=2,n-=2))
+  ((lim=offs+m<len?offs+m:len))
   white_sp=$(echoes '\x20' $n)
   # Return cursor to page origin
   printf '\x9B%s;%sH' $((y+1)) $((x+1))
@@ -160,7 +166,8 @@ print_pg() {
 win_ctx_op(){
   local -n w wa
   local attr
-  w=win_ctx wa=win_ctx_a
+  w=win_ctx
+  wa=win_ctx_a
   case $1 in
     'set')
       read -d '' w[attr] w[nref] w[pg_type] <<< "${2//;/ }"
@@ -291,7 +298,8 @@ draw_window() {
   local -i y x m n offset
   local -n w
   local horz vert
-  w=win_ctx offset=0
+  w=win_ctx
+  offset=0
   read -d '' y x m n <<< "${w[attr]//,/ }"
   horz=$(echoes '\xCD' $((n - 2))) vert="\xBA\x9B$((n-2))C\xBA"
   # Cursor origin and print top border
@@ -317,11 +325,13 @@ seq_select() {
   local -n w ref
   local optkey i
   optkey=${SETOPT_KEYS[$1]}
+  # Push current window context to stack and
+  # populate references to corresponding array for each option key
   win_ctx_op 'push'
   [[ $optkey =~ ^(MIRRORS|PACKAGES)$ ]] && : 'multi' || : 'single'
-  # Refer to corresponding array for each option key
   win_ctx_op 'set' "2,${SAGITTAL},$((LINES-2)),$((SAGITTAL-1));${optkey};$_"
-  w=win_ctx ref=$optkey
+  w=win_ctx
+  ref=$optkey
   [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
     for((i=-1;++i<${#ref[@]};)){
       [[ ${setopt_pairs[$optkey]## .*} =~ ${ref[$i]}\s? ]] && {
@@ -385,8 +395,11 @@ get_key() {
 nav_single() {
   local -i len lim
   local -n ref idx offs
+  ref=${win_ctx[nref]}
+  idx=win_ctx[idx]
+  offs=win_ctx[offset]
+  len=${#ref[@]}
   read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
-  ref=${win_ctx[nref]} idx=win_ctx[idx] offs=win_ctx[offset] len=${#ref[@]}
   ((lim-=2))
   print_pg
   for((;;)){
@@ -455,7 +468,10 @@ nav_single() {
 nav_multi() {
   local -i len lim
   local -n ref idx offs
-  idx=win_ctx[idx]  offs=win_ctx[offset] ref=${win_ctx[nref]} len=${#ref[@]}
+  ref=${win_ctx[nref]}
+  idx=win_ctx[idx]
+  offs=win_ctx[offset]
+  len=${#ref[@]}
   read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
   ((lim-=2))
   print_pg
@@ -530,4 +546,5 @@ main() {
   parse_files
   seq_main
 }
+
 main "$@"

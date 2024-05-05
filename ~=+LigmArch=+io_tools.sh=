@@ -44,7 +44,7 @@ setlocal foldcolumn=0
 setlocal foldenable
 setlocal foldexpr=0
 setlocal foldignore=#
-setlocal foldlevel=0
+setlocal foldlevel=2
 setlocal foldmarker={{{,}}}
 setlocal foldmethod=manual
 setlocal foldminlines=1
@@ -134,27 +134,128 @@ silent! normal! zE
 1,4fold
 5,16fold
 17,24fold
-25,26fold
-27,33fold
-34,42fold
-43,55fold
-56,60fold
-61,71fold
-72,80fold
-81,106fold
-107,159fold
-160,194fold
-195,223fold
-224,224fold
-224,289fold
-290,306fold
-307,315fold
-316,356fold
-357,384fold
-385,454fold
-455,523fold
-524,533fold
+25,28fold
+29,35fold
+36,44fold
+45,57fold
+58,62fold
+63,73fold
+74,82fold
+83,108fold
+109,165fold
+166,201fold
+202,230fold
+231,231fold
+231,296fold
+297,314fold
+315,323fold
+324,366fold
+367,394fold
+408,410fold
+411,416fold
+417,424fold
+425,444fold
+445,449fold
+450,455fold
+456,459fold
+460,463fold
+395,467fold
+481,483fold
+484,486fold
+487,496fold
+497,506fold
+507,511fold
+512,517fold
+518,527fold
+528,531fold
+532,535fold
+468,539fold
+540,550fold
 let &fdl = &fdl
+1
+normal! zc
+5
+normal! zc
+17
+normal! zc
+25
+normal! zc
+29
+normal! zc
+36
+normal! zc
+45
+normal! zc
+58
+normal! zc
+63
+normal! zc
+74
+normal! zc
+83
+normal! zc
+109
+normal! zc
+166
+normal! zc
+202
+normal! zc
+231
+normal! zo
+231
+normal! zc
+297
+normal! zc
+315
+normal! zc
+324
+normal! zc
+367
+normal! zc
+395
+normal! zo
+408
+normal! zc
+411
+normal! zc
+417
+normal! zc
+425
+normal! zc
+445
+normal! zc
+450
+normal! zc
+456
+normal! zc
+460
+normal! zc
+395
+normal! zc
+468
+normal! zo
+481
+normal! zc
+484
+normal! zc
+487
+normal! zc
+497
+normal! zc
+507
+normal! zc
+512
+normal! zc
+518
+normal! zc
+528
+normal! zc
+532
+normal! zc
+468
+normal! zc
+540
+normal! zc
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
@@ -162,5 +263,6 @@ normal! zt
 keepjumps 1
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
+nohlsearch
 doautoall SessionLoadPost
 " vim: set ft=vim :
