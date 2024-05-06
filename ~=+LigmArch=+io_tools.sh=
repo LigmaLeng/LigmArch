@@ -132,6 +132,7 @@ setlocal nowrap
 setlocal wrapmargin=0
 silent! normal! zE
 1,4fold
+7,7fold
 5,16fold
 17,25fold
 26,27fold
@@ -156,42 +157,45 @@ silent! normal! zE
 231,259fold
 261,262fold
 225,290fold
-291,305fold
-306,314fold
-326,334fold
-315,358fold
-359,364fold
-365,392fold
-403,405fold
-406,412fold
-413,421fold
-422,430fold
-431,441fold
-442,442fold
-442,446fold
-447,452fold
-453,456fold
-457,460fold
-393,464fold
-475,477fold
-478,480fold
-481,490fold
-491,500fold
-501,505fold
-506,511fold
-512,526fold
-527,530fold
-531,534fold
-465,538fold
-539,548fold
+291,306fold
+307,315fold
+327,335fold
+316,359fold
+360,369fold
+370,397fold
+408,410fold
+411,417fold
+418,426fold
+427,435fold
+436,446fold
+447,447fold
+447,451fold
+452,457fold
+458,461fold
+462,465fold
+398,469fold
+480,482fold
+483,485fold
+486,495fold
+496,505fold
+506,510fold
+511,516fold
+517,531fold
+532,535fold
+536,539fold
+470,543fold
+544,553fold
 let &fdl = &fdl
-let s:l = 363 - ((203 * winheight(0) + 21) / 43)
+5
+normal! zo
+5
+normal! zc
+let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 363
+keepjumps 1
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
-nohlsearch
 doautoall SessionLoadPost
 " vim: set ft=vim :

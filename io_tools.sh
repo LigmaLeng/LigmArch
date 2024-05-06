@@ -290,7 +290,8 @@ parse_files() {
 
 draw_window() {
   local y x m n offset horz vert
-  read -d '' y x m n <<< "${win_ctx[attr]//,/ }"
+  : "${1:-${win_ctx[attr]}}"
+  read -d '' y x m n <<< "${_//,/ }"
   ((offset=0))
   horz=$(echoes '\xCD' $((n-2))); vert="\xBA\x9B$((n-2))C\xBA"
   # Cursor origin and print top border
@@ -360,6 +361,10 @@ seq_ttin() {
   local -n w
   local str optkey
   optkey=${SETOPT_KEYS[$1]}; w=win_ctx
+  white_sp=$(echoes '\x20' $((SAGITTAL-5)))
+  draw_window "2,${SAGITTAL},4,$((SAGITTAL-1))"
+  printf '\x9B%s;%sr\x1B8  ENTER DESIRED %s:\x1B8\x9BB' 2 $((LINES-1)) $optkey
+  printf '\xAF \x1B7\x9B7m%s' "${white_sp}"
 }
 
 get_key() {
