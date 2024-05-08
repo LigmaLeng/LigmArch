@@ -359,12 +359,12 @@ seq_select() {
 
 seq_ttin() {
   local -n w
-  local str optkey
-  optkey=${SETOPT_KEYS[$1]}; w=win_ctx
-  white_sp=$(echoes '\x20' $((SAGITTAL-5)))
+  local str optkey boxlim
+  optkey=${SETOPT_KEYS[$1]}; w=win_ctx; boxlim=$((SAGITTAL-5))
+  white_sp=$(echoes '\x20' $boxlim)
   draw_window "2,${SAGITTAL},4,$((SAGITTAL-1))"
-  printf '\x9B%s;%sr\x1B8  ENTER DESIRED %s:\x1B8\x9BB' 2 $((LINES-1)) $optkey
-  printf '\xAF \x1B7\x9B7m%s' "${white_sp}"
+  printf '\xAF ENTER DESIRED %s\x1B8\x9BB :\x1B7' $optkey
+  printf '\x9B%s;%sr\x1B8\x9B7m ' 2 $((LINES-1))
 }
 
 get_key() {

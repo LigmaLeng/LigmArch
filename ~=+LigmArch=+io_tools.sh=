@@ -186,10 +186,6 @@ silent! normal! zE
 470,543fold
 544,553fold
 let &fdl = &fdl
-5
-normal! zo
-5
-normal! zc
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
