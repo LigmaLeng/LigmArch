@@ -359,15 +359,44 @@ seq_select() {
 
 seq_ttin() {
   local -n w
-  local str optkey boxlim
+  local key str optkey boxlim white_sp
   optkey=${SETOPT_KEYS[$1]}; w=win_ctx; boxlim=$((SAGITTAL-5))
   white_sp=$(echoes '\x20' $boxlim)
   draw_window "2,${SAGITTAL},4,$((SAGITTAL-1))"
   printf '\xAF ENTER DESIRED %s\x1B8\x9BB :\x1B7' $optkey
   printf '\x9B%s;%sr\x1B8\x9B7m ' 2 $((LINES-1))
+  for((;;)){
+    read ${READ_OPTS[@]} -N1 key
+    # Continue loop if read times out from lack of input
+    (($?>128)) && continue
+    # Handling escape characters
+    [[ ${key} == $'\x1B' ]] && {
+      read ${READ_OPTS[@]} -N1
+      # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
+      [[ "${REPLY}" != "[" ]] && return 0 || read ${READ_OPTS[@]} -N2
+      key=$'\x9B'${REPLY}
+    }
+    case ${key} in
+      $'\n')# ENTER
+        :
+      ;;
+      $'\x9BD')# LEFT
+        :
+      ;;
+      $'\x9BC')# RIGHT
+        :
+      ;;
+      $'\x9B1~')# HOME
+        :
+      ;;
+      $'\x9B4~')# END
+        :
+      ;;
+    esac
+  }
 }
 
-get_key() {
+get_navkey() {
   local key
   for((;;)){
     read ${READ_OPTS[@]} -N1 key
@@ -384,13 +413,11 @@ get_key() {
       $'\n') return 1;;# ENTER
       k|$'\x9BA') return 2;;# UP
       j|$'\x9BB') return 3;;# DOWN
-      h|$'\x9BD') return 4;;# LEFT
-      l|$'\x9BC') return 5;;# RIGHT
-      $'\x9B5~') return 6;;# PGUP
-      $'\x9B6~') return 7;;# PGDOWN
-      $'\x20') return 8;;# SPACE
-      $'\x9B1~') return 9;;# HOME
-      $'\x9B4~') return 10;;# END
+      $'\x9B5~') return 4;;# PGUP
+      $'\x9B6~') return 5;;# PGDOWN
+      $'\x20') return 6;;# SPACE
+      $'\x9B1~') return 7;;# HOME
+      $'\x9B4~') return 8;;# END
     esac
   }
 }
@@ -403,7 +430,7 @@ nav_single() {
   ((lim-=2))
   print_pg
   for((;;)){
-    get_key
+    get_navkey
     case $? in
       0) # ESC
         return 0
@@ -444,22 +471,22 @@ nav_single() {
           printf '\xAF \x9B7m%s\x1B8' "${BASH_REMATCH[3]}"
         }
       ;;
-      6) # PGUP
+      4) # PGUP
         ((offs=offs-lim>0?offs-lim:0))
         ((idx=idx-lim>0?idx-lim:0))
         print_pg
       ;;
-      7) # PGDOWN
+      5) # PGDOWN
         ((offs+lim<len-lim)) && ((offs+=lim)) ||
           ((offs=len>lim?len-lim:0))
         ((idx=idx+lim<len?idx+lim:len-1))
         print_pg
       ;;
-      9) # HOME
+      7) # HOME
         offs=0; idx=0
         print_pg
       ;;
-      10) # END
+      8) # END
         ((offs=len>lim?len-lim:0,idx=len-1))
         print_pg
       ;;
@@ -475,7 +502,7 @@ nav_multi() {
   ((lim-=2))
   print_pg
   for((;;)){
-    get_key
+    get_navkey
     case $? in
       0) # ESC
         return 0
@@ -503,18 +530,18 @@ nav_multi() {
           printf '\xAF\x9B5C\x9B7m%s\x1B8' "${ref[$idx]}"
         }
       ;;
-      6) # PGUP
+      4) # PGUP
         ((offs=offs-lim>0?offs-lim:0))
         ((idx=idx-lim>0?idx-lim:0))
         print_pg
       ;;
-      7) # PGDOWN
+      5) # PGDOWN
         ((offs+lim<len-lim)) && ((offs+=lim)) ||
           ((offs=len>lim?len-lim:0))
         ((idx=idx+lim<len?idx+lim:len-1))
         print_pg
       ;;
-      8) # SPACE
+      6) # SPACE
         [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]="$idx" || {
           [[ ${win_ctx[idxs]} =~ (^${idx},|,${idx},|,${idx}$|^${idx}$) ]] && {
             : "${BASH_REMATCH[0]}"
@@ -529,11 +556,11 @@ nav_multi() {
         }
         printf '\x9B3C\x04\x1B8'
       ;;
-      9) # HOME
+      7) # HOME
         offs=0 idx=0
         print_pg
       ;;
-      10) # END
+      8) # END
         ((offs=len>lim?len-lim:0,idx=len-1))
         print_pg
       ;;

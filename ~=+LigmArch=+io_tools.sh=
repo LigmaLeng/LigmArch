@@ -161,31 +161,47 @@ silent! normal! zE
 307,315fold
 327,335fold
 316,359fold
-360,369fold
-370,397fold
-408,410fold
-411,417fold
-418,426fold
-427,435fold
-436,446fold
-447,447fold
-447,451fold
-452,457fold
-458,461fold
-462,465fold
-398,469fold
-480,482fold
-483,485fold
-486,495fold
-496,505fold
-506,510fold
-511,516fold
-517,531fold
-532,535fold
-536,539fold
-470,543fold
-544,553fold
+360,398fold
+399,424fold
+435,437fold
+438,444fold
+445,453fold
+454,462fold
+463,473fold
+474,474fold
+474,478fold
+479,484fold
+485,488fold
+489,492fold
+425,496fold
+507,509fold
+510,512fold
+513,522fold
+523,532fold
+533,537fold
+538,543fold
+544,558fold
+559,562fold
+563,566fold
+497,570fold
+571,580fold
 let &fdl = &fdl
+425
+normal! zo
+435
+normal! zo
+474
+normal! zo
+474
+normal! zo
+474
+normal! zc
+425
+normal! zc
+497
+normal! zo
+497
+normal! zc
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
