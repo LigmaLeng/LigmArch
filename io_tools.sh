@@ -378,15 +378,14 @@ seq_select() {
 
 seq_ttin() {
   local -n w
-  local optkey key str boxlim white_sp maxlen re idx
-  w=win_ctx; optkey=${SETOPT_KEYS[$1]}; str=''
-  ((boxlim=SAGITTAL-5,idx=0))
-  white_sp=$(echoes '\x20' $((boxlim+1)))
+  local optkey key str lim white_sp re idx
+  w=win_ctx; optkey=${SETOPT_KEYS[$1]}; str=''; ((idx=0))
   case $optkey in
-    'USERNAME') ((maxlen=31));;
-    'HOSTNAME') ((maxlen=63));;
-    *) ((maxlen=0));;
+    'USERNAME') ((lim=31));;
+    'HOSTNAME') ((lim=63));;
+    *) ((lim=SAGITTAL-6));;
   esac
+  white_sp=$(echoes '\x20' $((lim+2)))
   draw_window "2,${SAGITTAL},5,$((SAGITTAL-1))"
   printf '\xAF ENTER DESIRED %s\x1B8\x9B2B \x1B7' $optkey
   printf '\x9B%s;%sr\x1B8:\x9B7m \x1B8' 2 $((LINES-1))
@@ -404,6 +403,8 @@ seq_ttin() {
       $'\x9B1~') ((idx=0));; # HOME
       $'\x9B4~') ((idx=${#str}));; # END
       *)
+        [[ $optkey =~ NAME$ ]] && { ((${#str}<lim)) || continue;}
+        ! [[ "${key}" =~ ^[[:alnum:][:punct:]]$ ]] && continue
         str="${str::${idx}}${key}${str:$((idx++))}"
       ;;
     esac
