@@ -137,71 +137,57 @@ silent! normal! zE
 17,25fold
 26,27fold
 28,34fold
-35,44fold
-45,57fold
-58,62fold
-63,73fold
-74,82fold
-83,106fold
-107,159fold
-165,168fold
-169,175fold
-176,179fold
-180,191fold
-160,195fold
-196,224fold
-225,225fold
-236,241fold
-242,244fold
-245,257fold
-231,259fold
-261,262fold
-225,290fold
-291,306fold
-307,315fold
-327,335fold
-316,359fold
-360,398fold
-399,424fold
-435,437fold
-438,444fold
-445,453fold
-454,462fold
-463,473fold
-474,474fold
-474,478fold
-479,484fold
-485,488fold
-489,492fold
-425,496fold
-507,509fold
-510,512fold
-513,522fold
-523,532fold
-533,537fold
-538,543fold
-544,558fold
-559,562fold
-563,566fold
-497,570fold
-571,580fold
+35,45fold
+46,58fold
+59,63fold
+64,74fold
+75,83fold
+84,107fold
+108,160fold
+166,169fold
+170,176fold
+177,180fold
+181,192fold
+161,196fold
+197,225fold
+226,226fold
+237,242fold
+243,245fold
+246,258fold
+232,260fold
+262,263fold
+226,291fold
+292,307fold
+308,325fold
+326,334fold
+346,354fold
+335,378fold
+379,415fold
+427,433fold
+434,442fold
+443,451fold
+452,462fold
+466,466fold
+463,466fold
+467,470fold
+471,476fold
+477,481fold
+482,485fold
+486,489fold
+416,493fold
+505,505fold
+506,515fold
+516,525fold
+526,529fold
+530,533fold
+534,539fold
+540,544fold
+545,559fold
+560,563fold
+564,567fold
+494,571fold
+572,581fold
 let &fdl = &fdl
-425
-normal! zo
-435
-normal! zo
-474
-normal! zo
-474
-normal! zo
-474
-normal! zc
-425
-normal! zc
-497
-normal! zo
-497
-normal! zc
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
@@ -209,5 +195,6 @@ normal! zt
 keepjumps 1
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
+nohlsearch
 doautoall SessionLoadPost
 " vim: set ft=vim :
