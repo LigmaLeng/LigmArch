@@ -32,6 +32,15 @@ nap() {
   read -t ${1:-0.001} -u $nap_fd || :
 }
 
+err_ttin(){
+  printf '%s\x1B8' "$(echoes '\x20' $((SAGITTAL-5)))"
+  for((i=0;i++<9;)){
+    ((i&1)) && printf '\x9B7m'
+    printf '%s\x1B8' "$1"; nap 0.07
+    read ${READ_OPTS[@]}
+  }
+}
+
 set_console() {
   # Use ANSI-C standard for language collation
   readonly LC_ALL=C
@@ -378,22 +387,29 @@ seq_select() {
 
 seq_ttin() {
   local -n w
-  local optkey key str lim white_sp re idx
-  w=win_ctx; optkey=${SETOPT_KEYS[$1]}; str=''; ((idx=0))
+  local optkey key str lim white_sp re msg idx
+  w=win_ctx; optkey=${SETOPT_KEYS[$1]}
+  str=''; msg=''; ((idx=0))
   case $optkey in
-    'USERNAME') ((lim=31));;
-    'HOSTNAME') ((lim=63));;
-    *) ((lim=SAGITTAL-6));;
+    'USERNAME') ((lim=32));;
+    'HOSTNAME') ((lim=64));;
+    *) ((lim=0));;
   esac
-  white_sp=$(echoes '\x20' $((lim+2)))
+  white_sp=$(echoes '\x20' $((SAGITTAL-5)))
   draw_window "2,${SAGITTAL},5,$((SAGITTAL-1))"
-  printf '\xAF ENTER DESIRED %s\x1B8\x9B2B \x1B7' $optkey
-  printf '\x9B%s;%sr\x1B8:\x9B7m \x1B8' 2 $((LINES-1))
+  printf '\xAF ENTER DESIRED %s\x9B%s;%sr' $optkey 2 $((LINES-1))
+  printf '\x1B8\x9B2B :\x9B7m \x1B8\x9BB  \x1B7' 
   for((;;)){
     get_key key
     case $key in
       $'\x1B') return;; # ESC
-      $'\x0A') :;; # ENTER
+      $'\x0A') # ENTER
+        [[ $optkey == 'USERNAME' ]] && {
+          [[ "$str" =~ .*[$].*.$ ]] && {
+            err_ttin "'$' ONLY VALID AS LAST CHARACTER"; continue;}
+        }
+        continue
+      ;;
       $'\x9BD') ((idx>0)) && ((idx--));; # LEFT
       $'\x9BC') ((idx<${#str})) && ((idx++));; # RIGHT
       $'\x7F') # BACKSPACE
@@ -403,12 +419,33 @@ seq_ttin() {
       $'\x9B1~') ((idx=0));; # HOME
       $'\x9B4~') ((idx=${#str}));; # END
       *)
-        [[ $optkey =~ NAME$ ]] && { ((${#str}<lim)) || continue;}
-        ! [[ "${key}" =~ ^[[:alnum:][:punct:]]$ ]] && continue
+        # Broad key validation: if failed, print warning and flush input buffer
+        [[ "${key}" =~ ^[[:alnum:][:punct:]]$ ]] || {
+          err_ttin 'INVALID KEY'; continue;}
+        # String length validation
+        ((lim&&${#str}>=lim)) && { err_ttin "${lim} CHARACTER LIMIT"; continue;}
+        # Regex validation for valid patterns
+        # USERNAME: ^[[:alpha:]_][[:alnum:]_-]*\$$)
+        case $optkey in
+          'HOSTNAME')
+            [[ "${key}" =~ [a-z0-9-] ]] || {
+              err_ttin 'VALID CHARACTERS: [a-z,0-9,-]'; continue;}
+          ;;
+          'USERNAME')
+            ((!idx)) && {
+              [[ "${key}" =~ [[:alpha:]_] ]] || {
+                err_ttin 'VALID 1ST CHARACTERS: [a-z,A-Z,_]'; continue;}
+            } || {
+              [[ "${key}" =~ [[:alpha:]_\$-] ]] || {
+                err_ttin 'VALID CHARACTERS: [a-z,A-Z,_,-,$]'; continue;}
+            }
+          ;;
+        esac
         str="${str::${idx}}${key}${str:$((idx++))}"
       ;;
     esac
-    printf '%s\x1B8:%s\x9B7m' "$white_sp" "${str::${idx}}"
+    printf '%s\x1B8\x9BB' "$white_sp" "$white_sp"
+    printf '%s\x9B7m' "${str::${idx}}"
     ((idx==${#str})) && printf ' \x1B8' ||
       printf '%s\x9B27m%s\x1B8' "${str:${idx}:1}" "${str:$((idx+1))}"
   }
