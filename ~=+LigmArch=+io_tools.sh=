@@ -137,61 +137,85 @@ silent! normal! zE
 17,25fold
 26,27fold
 28,34fold
-35,43fold
-44,54fold
-55,67fold
-68,72fold
-73,83fold
-84,92fold
-93,116fold
-117,169fold
-175,178fold
-179,185fold
-186,189fold
-190,201fold
-170,205fold
-206,234fold
-235,235fold
-246,251fold
-252,254fold
-255,267fold
-241,269fold
-271,272fold
-235,300fold
-301,316fold
-317,334fold
-335,343fold
-355,363fold
-344,387fold
-388,453fold
-465,471fold
-472,480fold
-481,489fold
-490,500fold
-504,504fold
-501,504fold
-505,508fold
-509,514fold
-515,519fold
-520,523fold
-524,527fold
-454,531fold
-543,543fold
-544,553fold
-554,563fold
-564,567fold
-568,571fold
-572,577fold
-578,582fold
-583,597fold
-598,601fold
-602,605fold
-532,609fold
-610,619fold
+35,45fold
+46,58fold
+59,63fold
+64,74fold
+75,83fold
+84,107fold
+108,160fold
+165,172fold
+173,177fold
+180,185fold
+161,188fold
+194,197fold
+198,204fold
+205,209fold
+210,224fold
+189,228fold
+229,257fold
+258,258fold
+269,274fold
+275,277fold
+278,290fold
+264,292fold
+294,295fold
+258,323fold
+324,338fold
+339,356fold
+357,365fold
+377,385fold
+366,409fold
+449,463fold
+410,470fold
+482,488fold
+489,497fold
+498,506fold
+507,517fold
+521,521fold
+518,521fold
+522,525fold
+526,531fold
+532,536fold
+537,540fold
+541,544fold
+471,548fold
+560,560fold
+561,570fold
+571,580fold
+581,584fold
+585,588fold
+589,594fold
+595,599fold
+600,614fold
+615,618fold
+619,622fold
+549,626fold
+627,636fold
 let &fdl = &fdl
-454
+161
 normal! zo
-454
+173
+normal! zo
+180
+normal! zo
+161
+normal! zc
+189
+normal! zo
+210
+normal! zo
+189
+normal! zc
+366
+normal! zo
+366
+normal! zc
+471
+normal! zo
+482
+normal! zo
+471
 normal! zc
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif

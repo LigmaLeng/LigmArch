@@ -32,15 +32,6 @@ nap() {
   read -t ${1:-0.001} -u $nap_fd || :
 }
 
-err_ttin(){
-  printf '%s\x1B8' "$(echoes '\x20' $((SAGITTAL-5)))"
-  for((i=0;i++<9;)){
-    ((i&1)) && printf '\x9B7m'
-    printf '%s\x1B8' "$1"; nap 0.07
-    read ${READ_OPTS[@]}
-  }
-}
-
 set_console() {
   # Use ANSI-C standard for language collation
   readonly LC_ALL=C
@@ -167,6 +158,34 @@ print_pg() {
   [[ "${1:-}" == 'nocurs' ]] || printf '\xAF\x9BD'
 }
 
+prompt(){
+  local str white_sp i
+  white_sp=$(echoes '\x20' 65)
+  case $1 in
+    'err')
+      printf '%s\x1B8' "$white_sp"
+      for((i=0;i++<9;)){
+        ((i&1)) && printf '\x9B7m'
+        printf '%s\x1B8' "$2"; nap 0.07
+        read ${READ_OPTS[@]}
+      }
+    ;;
+    'new')
+      : "${win_ctx[offset]}"
+      printf '\xAF ENTER DESIRED %s\x9B%s;%sr' ${SETOPT_KEYS[$_]} 2 $((LINES-1))
+      printf '\x1B8\x9BB  \x1B7\x9BB\x9BD:\x9B7m \x1B8' 
+    ;;
+    'update')
+      str="${win_ctx[nref]}"
+      ((i=${win_ctx[idx]}))
+      printf '%s\x1B8\x9BB' "$white_sp" "$white_sp"
+      printf '%s\x9B7m' "${str::${idx}}"
+      ((idx==${#str})) && printf ' \x1B8' ||
+        printf '%s\x9B27m%s\x1B8' "${str:${idx}:1}" "${str:$((idx+1))}"
+    ;;
+  esac
+}
+
 win_ctx_op(){
   local -n w wa
   local attr
@@ -184,6 +203,7 @@ win_ctx_op(){
       return $?
     ;;
     'push')
+      [[ ${w[pg_type]} == 'prompt' ]] && w[nref]="__${w[nref]}"
       : "${w[attr]};${w[nref]};${w[pg_type]};${w[offset]};${w[idx]};${w[idxs]}"
       win_ctx_a+=("$_")
     ;;
@@ -193,10 +213,13 @@ win_ctx_op(){
         : "${i//;/ }"
         read -d '' w[attr] w[nref] w[pg_type] w[offset] w[idx] w[idxs] <<< "$_"
         draw_window
-        print_pg 'nocurs'
+        [[ ${w[pg_type]} == 'prompt' ]] && { w[nref]="${w[nref]#__}";} ||
+          print_pg 'nocurs'
       }
-      # Print cursor indicator for top window context
-      printf '\xAF\x9BD'
+      [[ ${w[pg_type]} != 'prompt' ]] && printf '\xAF\x9BD' || {
+        prompt 'new'
+        [[ -n "${w[nref]}" ]] && { prompt 'update';}
+      }
       unset wa[-1]
     ;;
   esac
@@ -300,8 +323,7 @@ parse_files() {
 
 draw_window() {
   local y x m n offset horz vert
-  : "${1:-${win_ctx[attr]}}"
-  read -d '' y x m n <<< "${_//,/ }"
+  read -d '' y x m n <<< "${win_ctx[attr]//,/ }"
   ((offset=0))
   horz=$(echoes '\xCD' $((n-2))); vert="\xBA\x9B$((n-2))C\xBA"
   # Cursor origin and print top border
@@ -386,68 +408,63 @@ seq_select() {
 }
 
 seq_ttin() {
-  local -n w
-  local optkey key str lim white_sp re msg idx
-  w=win_ctx; optkey=${SETOPT_KEYS[$1]}
-  str=''; msg=''; ((idx=0))
-  case $optkey in
-    'USERNAME') ((lim=32));;
-    'HOSTNAME') ((lim=64));;
-    *) ((lim=0));;
-  esac
-  white_sp=$(echoes '\x20' $((SAGITTAL-5)))
-  draw_window "2,${SAGITTAL},5,$((SAGITTAL-1))"
-  printf '\xAF ENTER DESIRED %s\x9B%s;%sr' $optkey 2 $((LINES-1))
-  printf '\x1B8\x9B2B :\x9B7m \x1B8\x9BB  \x1B7' 
+  local -n str idx
+  local optkey key strcomp lim
+  win_ctx_op 'push'
+  win_ctx_op 'set' "2,$((COLUMNS-70)),5,69;__;prompt"
+  str=win_ctx[nref]; idx=win_ctx[idx]; win_ctx[offset]=$1
+  optkey=${SETOPT_KEYS[$1]}; str=''; strcomp=''
+  case $optkey in 'USERNAME') : 32;; 'HOSTNAME') : 64;; *) : 0;;esac
+  ((idx=0,lim=$_))
+  draw_window
+  prompt 'new'
   for((;;)){
     get_key key
     case $key in
-      $'\x1B') return;; # ESC
       $'\x0A') # ENTER
         [[ $optkey == 'USERNAME' ]] && {
           [[ "$str" =~ .*[$].*.$ ]] && {
-            err_ttin "'$' ONLY VALID AS LAST CHARACTER"; continue;}
+            prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
         }
-        continue
-      ;;
+        setopt_pairs[$optkey]="${str}"
+        setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${str}"
+      ;&
+      $'\x1B') win_ctx_op 'pop'; return;; # ESC
       $'\x9BD') ((idx>0)) && ((idx--));; # LEFT
-      $'\x9BC') ((idx<${#str})) && ((idx++));; # RIGHT
+      $'\x9BC') : "$str"; ((idx<${#_})) && ((idx++));; # RIGHT
       $'\x7F') # BACKSPACE
-        ((${#str}&&idx)) && str="${str::$((idx-1))}${str:$((idx--))}";;
+        : "$str"; ((${#_}&&idx)) && str="${_::$((idx-1))}${_:$((idx--))}";;
       $'\x9B3~') # DEL
-        ((idx<${#str})) && str="${str::${idx}}${str:$((idx+1))}";;
+        : "$str"; ((idx<${#_})) && str="${_::${idx}}${_:$((idx+1))}";;
       $'\x9B1~') ((idx=0));; # HOME
-      $'\x9B4~') ((idx=${#str}));; # END
+      $'\x9B4~') : "$str"; ((idx=${#_}));; # END
       *)
         # Broad key validation: if failed, print warning and flush input buffer
         [[ "${key}" =~ ^[[:alnum:][:punct:]]$ ]] || {
-          err_ttin 'INVALID KEY'; continue;}
+          prompt 'err' 'INVALID KEY'; continue;}
         # String length validation
-        ((lim&&${#str}>=lim)) && { err_ttin "${lim} CHARACTER LIMIT"; continue;}
+        : "$str"; ((lim&&${#_}>=lim)) && {
+          prompt 'err' "${lim} CHARACTER LIMIT"; continue;}
         # Regex validation for valid patterns
-        # USERNAME: ^[[:alpha:]_][[:alnum:]_-]*\$$)
         case $optkey in
           'HOSTNAME')
             [[ "${key}" =~ [a-z0-9-] ]] || {
-              err_ttin 'VALID CHARACTERS: [a-z,0-9,-]'; continue;}
+              prompt 'err' 'VALID CHARACTERS: [a-z,0-9,-]'; continue;}
           ;;
           'USERNAME')
             ((!idx)) && {
               [[ "${key}" =~ [[:alpha:]_] ]] || {
-                err_ttin 'VALID 1ST CHARACTERS: [a-z,A-Z,_]'; continue;}
+                prompt 'err' 'VALID 1ST CHARACTERS: [a-z,A-Z,_]'; continue;}
             } || {
               [[ "${key}" =~ [[:alpha:]_\$-] ]] || {
-                err_ttin 'VALID CHARACTERS: [a-z,A-Z,_,-,$]'; continue;}
+                prompt 'err' 'VALID CHARACTERS: [a-z,A-Z,_,-,$]'; continue;}
             }
           ;;
         esac
         str="${str::${idx}}${key}${str:$((idx++))}"
       ;;
     esac
-    printf '%s\x1B8\x9BB' "$white_sp" "$white_sp"
-    printf '%s\x9B7m' "${str::${idx}}"
-    ((idx==${#str})) && printf ' \x1B8' ||
-      printf '%s\x9B27m%s\x1B8' "${str:${idx}:1}" "${str:$((idx+1))}"
+    prompt 'update'
   }
 }
 
