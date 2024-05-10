@@ -146,77 +146,53 @@ silent! normal! zE
 108,160fold
 165,172fold
 173,177fold
-180,185fold
-161,188fold
-194,197fold
-198,204fold
-205,209fold
-210,224fold
-189,228fold
-229,257fold
-258,258fold
-269,274fold
-275,277fold
-278,290fold
-264,292fold
-294,295fold
-258,323fold
-324,338fold
-339,356fold
-357,365fold
-377,385fold
-366,409fold
-449,463fold
-410,470fold
-482,488fold
-489,497fold
-498,506fold
-507,517fold
-521,521fold
-518,521fold
-522,525fold
-526,531fold
-532,536fold
+183,187fold
+161,190fold
+196,199fold
+200,206fold
+207,211fold
+212,226fold
+191,230fold
+231,259fold
+260,260fold
+271,276fold
+277,279fold
+280,292fold
+266,294fold
+296,297fold
+260,325fold
+326,340fold
+341,358fold
+359,369fold
+381,389fold
+370,413fold
+468,482fold
+414,489fold
+501,507fold
+508,516fold
+517,525fold
+526,536fold
+540,540fold
 537,540fold
 541,544fold
-471,548fold
-560,560fold
-561,570fold
-571,580fold
-581,584fold
-585,588fold
-589,594fold
-595,599fold
-600,614fold
-615,618fold
-619,622fold
-549,626fold
-627,636fold
+545,550fold
+551,555fold
+556,559fold
+560,563fold
+490,567fold
+579,579fold
+580,589fold
+590,599fold
+600,603fold
+604,607fold
+608,613fold
+614,618fold
+619,633fold
+634,637fold
+638,641fold
+568,645fold
+646,655fold
 let &fdl = &fdl
-161
-normal! zo
-173
-normal! zo
-180
-normal! zo
-161
-normal! zc
-189
-normal! zo
-210
-normal! zo
-189
-normal! zc
-366
-normal! zo
-366
-normal! zc
-471
-normal! zo
-482
-normal! zo
-471
-normal! zc
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l

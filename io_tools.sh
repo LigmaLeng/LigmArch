@@ -176,9 +176,11 @@ prompt(){
       printf '\x1B8\x9BB  \x1B7\x9BB\x9BD:\x9B7m \x1B8' 
     ;;
     'update')
+      printf '%s\x1B8\x9BB' "$white_sp" "$white_sp"
+      : "${SETOPT_KEYS[${win_ctx[offset]}]}"
+      [[ $_ =~ PASS$ ]] && { printf '\x9B7m \x1B8'; return;}
       str="${win_ctx[nref]}"
       ((i=${win_ctx[idx]}))
-      printf '%s\x1B8\x9BB' "$white_sp" "$white_sp"
       printf '%s\x9B7m' "${str::${idx}}"
       ((idx==${#str})) && printf ' \x1B8' ||
         printf '%s\x9B27m%s\x1B8' "${str:${idx}:1}" "${str:$((idx+1))}"
@@ -359,6 +361,8 @@ seq_main() {
   draw_window
   for((i=0;i<${#SETOPT_KEYS[@]};i++)){
     setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}${setopt_pairs[${SETOPT_KEYS[$i]}]}"
+    [[ ${SETOPT_KEYS[$i]} =~ (NAME|PASS)$ ]] &&
+      setopt_pairs[${SETOPT_KEYS[$i]}]=''
   }
   win_ctx_op 'nav'
 }
@@ -422,12 +426,27 @@ seq_ttin() {
     get_key key
     case $key in
       $'\x0A') # ENTER
+        [[ -z "$str" ]] && { prompt 'err' "NO INPUT RECEIVED"; continue;}
         [[ $optkey == 'USERNAME' ]] && {
           [[ "$str" =~ .*[$].*.$ ]] && {
             prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
         }
-        setopt_pairs[$optkey]="${str}"
-        setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${str}"
+        [[ $optkey =~ PASS$ ]] && {
+          [[ -z "$strcomp" ]] && {
+            strcomp="$str"; str=''
+            printf '\x9BARE-ENTER %s TO CONFIRM\x1B8' "$optkey"; continue
+          } || {
+            [[ "$strcomp" != "$str" ]] && {
+              strcomp=''; str=''
+              printf '\x9BAENTER DESIRED %s      \x1B8' $optkey
+              prompt 'err' "INVALID MATCH"; continue
+            }
+          }
+          : "hidden"
+        } || : "$str"
+        setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${_}"
+        setopt_pairs[$optkey]="$str"
+        echo "${setopt_pairs[$optkey]}"
       ;&
       $'\x1B') win_ctx_op 'pop'; return;; # ESC
       $'\x9BD') ((idx>0)) && ((idx--));; # LEFT
