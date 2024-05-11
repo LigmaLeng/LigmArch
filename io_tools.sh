@@ -4,12 +4,13 @@
 
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
-TEMPLATE_DIR="${CTX_DIR}/options.conf"
+TEMPLATE_DIR="${CTX_DIR}/options.setup"
 READ_OPTS=(-rs -t 0.02)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F
-declare -a KEYMAP LOCALE MIRRORS KERNEL EDITOR PACKAGES
+declare -a KEYMAP MIRRORS LOCALE BLOCK_DEVICE TIMEZONE 
+declare -a KERNEL VIDEO_DRIVERS PACKAGES EXTRAS
 declare -a setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
@@ -97,12 +98,14 @@ display_cleave() {
   # Pilot cleavage and swap ligatures
   printf '\xD0%b' $fissure '\n'
   printf '\xD2%b' $fissure '\x9BA\x0D'
+  ((i=0,lim=(TRANSVERSE>>2)-(LINES&1)))
   # Widen pilot cleave if lines are odd
   # A M B L: up  delete_line  down  insert_line
+  printf '\x9B%s;%sr\x9B%s;H' 2 $((TRANSVERSE+(2*lim)+(LINES&1))) $TRANSVERSE
   ((LINES&1)) && printf '\x9B%s' {A,M,B,L,A}
   # Continue widening
-  ((i=0,lim=(TRANSVERSE>>2)-(LINES&1)))
   for((i;i++<lim;)){ printf '\x9B%s' {A,M,B,2L,A}; nap 0.015;}
+  printf '\x9Br'
 }
 
 print_pg() {
@@ -172,8 +175,8 @@ prompt(){
     ;;
     'new')
       : "${win_ctx[offset]}"
-      printf '\xAF ENTER DESIRED %s\x9B%s;%sr' ${SETOPT_KEYS[$_]} 2 $((LINES-1))
-      printf '\x1B8\x9BB  \x1B7\x9BB\x9BD:\x9B7m \x1B8' 
+      printf '\xAF ENTER DESIRED %s\x1B8\x9BB' ${SETOPT_KEYS[$_]}
+      printf '  \x1B7\x9BB\x9BD:\x9B7m \x1B8' 
     ;;
     'update')
       printf '%s\x1B8\x9BB' "$white_sp" "$white_sp"
@@ -257,8 +260,8 @@ exit_prompt() {
   win_ctx_op 'pop'
 }
 
-parse_files() {
-  local lim key
+options_init() {
+  local lim key i
   lim=0
   # Create cache directory if non-existent
   [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
@@ -282,19 +285,28 @@ parse_files() {
         while read; do
           [[ -z $REPLY ]] && {
             setopt_pairs[$key]="${setopt_pairs[$key]#  }" && break
-          } || { setopt_pairs[$key]+="  ${REPLY//[[:space:]]}";}
+          } || { setopt_pairs[$key]+="  ${REPLY#"${REPLY%%[![:space:]]*}"}";}
         done
-        [[ $key =~ ^(KERNEL|EDITOR|PACKAGES) ]] && {
+        [[ $key != 'MIRRORS' ]] && {
           local -n ref=$key
           ref=(${setopt_pairs[$key]})
-          [[ $key != 'PACKAGES' ]] && setopt_pairs[$key]=${ref[0]}
+          ! [[ $key =~ ^(PACKAGES|EXTRAS)$ ]] && setopt_pairs[$key]=${ref[0]}
         }
       ;;
     esac
   done < "$TEMPLATE_DIR"
   # Format spacing for printing setup options
-  for i in ${SETOPT_KEYS[@]};{
-    SETOPT_KEYS_F+=("${i/_/ }$(echoes '\x20' $((lim-${#i}+3)))");}
+  for((i=-1;++i<${#SETOPT_KEYS[@]};)){
+    key="${SETOPT_KEYS[$i]}"
+    SETOPT_KEYS_F+=("${key/_/ }$(echoes '\x20' $((lim-${#key}+3)))")
+    setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
+    [[ $key =~ (NAME|PASS)$ ]] && setopt_pairs[$key]=''
+  }
+  # Append option keys relevant to config based actions
+  for key in {SAVE_CONFIG,LOAD_CONFIG,INSTALL};{
+    SETOPT_KEYS+=("$key")
+    setopt_pairs_f+=("${key/_/ }")
+  }
   # Retrieve currently active mirrors from cache if available
   # Else retrieve current mirrorlist from official mirrorlist generator page
   [[ -a "${CACHE_DIR}/mirrorlist" ]] && {
@@ -315,12 +327,19 @@ parse_files() {
   }
   # Get kbd keymap files
   KEYMAP=($(localectl list-keymaps))
+  # Get zoneinfo files
+  TIMEZONE=($(timedatectl list-timezones))
   # Parse supported locales and format spacing for printing
   ((lim=SAGITTAL-4))
   while read; do
     LOCALE+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
-  declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALE
+  while read; do
+    [[ $REPLY =~ (sd|hd|vd|nvme|mmcblk[0-9]*$) ]] &&
+      BLOCK_DEVICE+=("$REPLY")
+  done < <(lsblk -dpno NAME)
+  declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALE BLOCK_DEVICE
+  declare -r KERNEL TIMEZONE VIDEO_DRIVERS PACKAGES EXTRAS
 }
 
 draw_window() {
@@ -334,8 +353,8 @@ draw_window() {
   for((;offset++<m-2;)){ printf '\x9B%s;%sH%b' $((y+offset)) $x $vert;}
   # Print bottom border
   printf '\x9B%s;%sH\xC8%s\xBC' $((y+m-1)) $x $horz
-  # Bound scrolling region, bring cursor into window, save cursor state
-  printf '\x9B%s;%sr\x9B%s;%sH\x1B7' $((y+1)) $((y+m-2)) $((y+1)) $((x+1))
+  # Bring cursor into window, save cursor state
+  printf '\x9B%s;%sH\x1B7' $((y+1)) $((x+1))
 }
 
 get_key() {
@@ -359,11 +378,6 @@ get_key() {
 seq_main() {
   win_ctx_op 'set' "1,1,${LINES},${COLUMNS};setopt_pairs_f;single"
   draw_window
-  for((i=0;i<${#SETOPT_KEYS[@]};i++)){
-    setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}${setopt_pairs[${SETOPT_KEYS[$i]}]}"
-    [[ ${SETOPT_KEYS[$i]} =~ (NAME|PASS)$ ]] &&
-      setopt_pairs[${SETOPT_KEYS[$i]}]=''
-  }
   win_ctx_op 'nav'
 }
 
@@ -374,7 +388,7 @@ seq_select() {
   win_ctx_op 'push'
   # Refer to corresponding arrays and attributes belonging to option key
   : "2,${SAGITTAL},$((${#ref[@]}<LINES-4?${#ref[@]}+2:LINES-2)),$((SAGITTAL-1))"
-  [[ $optkey =~ ^(MIRRORS|PACKAGES)$ ]] && {
+  [[ $optkey =~ ^(MIRRORS|PACKAGES|EXTRAS)$ ]] && {
     : "$_;${optkey};multi";} || : "$_;${optkey};single"
   win_ctx_op 'set' "$_"
   # If option supports multiple values, convert string values to indices
@@ -501,8 +515,11 @@ nav_single() {
       $'\x0A') # ENTER
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
           printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
-          [[ ${SETOPT_KEYS[$idx]} =~ (NAME|PASS)$ ]] && seq_ttin $idx ||
-            seq_select $idx
+          case ${SETOPT_KEYS[$idx]} in
+            *NAME|*PASS) seq_ttin $idx;;
+            SAVE*|LOAD*) echo 'yas';;
+            *) seq_select $idx;;
+          esac
         } || return 0
       ;;
       k|$'\x9BA') # UP
@@ -649,7 +666,7 @@ main() {
   trap 'exit_prompt' SIGINT
   [[ $1 == -d ]] && test_size || set_console
   display_init
-  parse_files
+  options_init 
   seq_main
 }
 main "$@"

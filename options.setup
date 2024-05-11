@@ -33,13 +33,15 @@ value = unset
 [HOSTNAME]
 value = unset
 
-[EDITOR]
+[VIDEO_DRIVERS]
 list =
-      vim
-      neovim
-      emacs
-      vi
-      nano
+      none
+      AMDGPU(open-source)
+      AMDATI(open-source)
+      NVIDIA(proprietary)
+      NVIDIA(open-source)
+      NOUVEAU(open-source)
+      INTEL(open-source)
 
 [PACKAGES]
 list =
@@ -47,12 +49,14 @@ list =
       cmake
       curl
       dialog
-      gcc
       git
-      make
       man-db
       man-pages
       networkmanager
+      neovim
       openssh
-      sudo
-      texinfo
+
+[EXTRAS]
+list =
+      multilib
+      zram-swap
