@@ -132,11 +132,15 @@ print_pg() {
       #       cost of evaluating unnecessary inner conditionals
       [[ ${w[nref]} == 'setopt_pairs_f' ]] && {
         for((i=offs-1;++i<lim;)){
-          : "${ref[$i]}"; ((${#_}>COLUMNS-8)) && : "${_% *} ..."
+          : "${ref[$i]}"
+          ((${#_}>COLUMNS-8)) && {
+            : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
           printf '\x1B7  %s\x1B8\x9BB' "$_"
         }
         printf '\x9B%sA\x1B7  ' $((i-=w[idx]))
-        : "${ref[$((lim-i))]}"; ((${#_}>COLUMNS-8)) && : "${_% *} ..." || : "$_"
+        : "${ref[$((lim-i))]}"
+        ((${#_}>COLUMNS-8)) && {
+          : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";} || : "$_"
       } || {
         for((i=offs-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
         printf '\x9B%sA\x1B7  ' $((i-=w[idx]))
@@ -285,7 +289,7 @@ options_init() {
         while read; do
           [[ -z $REPLY ]] && {
             setopt_pairs[$key]="${setopt_pairs[$key]#  }" && break
-          } || { setopt_pairs[$key]+="  ${REPLY#"${REPLY%%[![:space:]]*}"}";}
+          } || { setopt_pairs[$key]+="  ${REPLY//[[:space:]]}";}
         done
         [[ $key != 'MIRRORS' ]] && {
           local -n ref=$key
@@ -305,7 +309,7 @@ options_init() {
   # Append option keys relevant to config based actions
   for key in {SAVE_CONFIG,LOAD_CONFIG,INSTALL};{
     SETOPT_KEYS+=("$key")
-    setopt_pairs_f+=("${key/_/ }")
+    setopt_pairs_f+=("[${key/_/ }]")
   }
   # Retrieve currently active mirrors from cache if available
   # Else retrieve current mirrorlist from official mirrorlist generator page
@@ -335,7 +339,7 @@ options_init() {
     LOCALE+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
   while read; do
-    [[ $REPLY =~ (sd|hd|vd|nvme|mmcblk[0-9]*$) ]] &&
+    [[ $REPLY =~ (sd|hd|nvme|mmcblk[0-9]*$) ]] &&
       BLOCK_DEVICE+=("$REPLY")
   done < <(lsblk -dpno NAME)
   declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALE BLOCK_DEVICE
@@ -514,7 +518,10 @@ nav_single() {
       $'\x1B') return 1;; # ESC
       $'\x0A') # ENTER
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
-          printf '  \x9B7m%s\x1B8' "${ref[$idx]}"
+          : "${ref[$idx]}"
+          ((${#_}>COLUMNS-8)) && {
+            : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
+          printf '  \x9B7m%s\x1B8' "$_"
           case ${SETOPT_KEYS[$idx]} in
             *NAME|*PASS) seq_ttin $idx;;
             SAVE*|LOAD*) echo 'yas';;
@@ -542,9 +549,12 @@ nav_single() {
       ;&
       k|$'\x9BA') # UP/DOWN fallthrough
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
-          ((${#_}>COLUMNS-6)) && : "${_% *} ...${_: -2}"
-          ((${#ref[$idx]}>COLUMNS-8)) && : "$_,${ref[$idx]% *} ..." ||
-            : "$_,${ref[$idx]}" 
+          ((${#_}>COLUMNS-6)) && {
+            : "${_::$((COLUMNS-8))}${_: -2}"; : "${_%  *} ...${_: -2}";}
+          ((${#ref[$idx]}>COLUMNS-8)) && {
+            : "$_,${ref[$idx]::$((COLUMNS-8))}"
+            : "${_%  *} ..."
+          } || : "$_,${ref[$idx]}" 
         } || : "$_,${ref[$idx]}"
         [[ $_ =~ ^(  .*),(.),(.*)$ ]] && {
           printf '%s\x1B8\x9B%s\x1B7' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
