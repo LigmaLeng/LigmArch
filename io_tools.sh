@@ -515,7 +515,7 @@ nav_single() {
   for((;;)){
     get_key key
     case $key in
-      $'\x1B') return 1;; # ESC
+      q|$'\x1B') return 1;; # ESC
       $'\x0A') # ENTER
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
           : "${ref[$idx]}"

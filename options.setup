@@ -19,7 +19,7 @@ list =
       linux-hardened
 
 [TIMEZONE]
-value = unset
+value = Australia/Melbourne
 
 [ROOTPASS]
 value = unset
