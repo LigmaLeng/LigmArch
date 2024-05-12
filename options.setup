@@ -11,12 +11,23 @@ value = en_AU.UTF-8
 [BLOCK_DEVICE]
 value = unset
 
+[PARTITION_ALIGNMENT]
+list =
+      default
+      512b
+      2048b
+      4096b
+
+[ESP_SIZE]
+value = 1Gib
+
+[ROOT_FS_SIZE]
+value = 64Gib
+
 [KERNEL]
 list =
       linux
       linux-lts
-      linux-zen
-      linux-hardened
 
 [TIMEZONE]
 value = Australia/Melbourne
@@ -60,3 +71,4 @@ list =
 list =
       multilib
       zram-swap
+      increase-bytes-per-inode

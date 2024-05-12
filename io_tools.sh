@@ -1,7 +1,3 @@
-#!/usr/bin/env bash
-#
-# TODO: Write file header
-
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
 TEMPLATE_DIR="${CTX_DIR}/options.setup"
@@ -9,8 +5,8 @@ READ_OPTS=(-rs -t 0.02)
 readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F
-declare -a KEYMAP MIRRORS LOCALE BLOCK_DEVICE TIMEZONE 
-declare -a KERNEL VIDEO_DRIVERS PACKAGES EXTRAS
+declare -a KEYMAP MIRRORS LOCALE BLOCK_DEVICE PARTITION_ALIGNMENT
+declare -a KERNEL TIMEZONE VIDEO_DRIVERS PACKAGES EXTRAS
 declare -a setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
@@ -179,7 +175,7 @@ prompt(){
     ;;
     'new')
       : "${win_ctx[offset]}"
-      printf '\xAF ENTER DESIRED %s\x1B8\x9BB' ${SETOPT_KEYS[$_]}
+      printf '\xAF ENTER DESIRED %s\x1B8\x9BB' "${SETOPT_KEYS[$_]//_/ }"
       printf '  \x1B7\x9BB\x9BD:\x9B7m \x1B8' 
     ;;
     'update')
@@ -302,7 +298,7 @@ options_init() {
   # Format spacing for printing setup options
   for((i=-1;++i<${#SETOPT_KEYS[@]};)){
     key="${SETOPT_KEYS[$i]}"
-    SETOPT_KEYS_F+=("${key/_/ }$(echoes '\x20' $((lim-${#key}+3)))")
+    SETOPT_KEYS_F+=("${key//_/ }$(echoes '\x20' $((lim-${#key}+3)))")
     setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
     [[ $key =~ (NAME|PASS)$ ]] && setopt_pairs[$key]=''
   }
@@ -343,7 +339,7 @@ options_init() {
       BLOCK_DEVICE+=("$REPLY")
   done < <(lsblk -dpno NAME)
   declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALE BLOCK_DEVICE
-  declare -r KERNEL TIMEZONE VIDEO_DRIVERS PACKAGES EXTRAS
+  declare -r PARTITION_ALIGNMENT KERNEL TIMEZONE VIDEO_DRIVERS EXTRAS
 }
 
 draw_window() {
@@ -436,7 +432,7 @@ seq_ttin() {
   win_ctx_op 'set' "2,$((COLUMNS-70)),5,69;__;prompt"
   str=win_ctx[nref]; idx=win_ctx[idx]; win_ctx[offset]=$1
   optkey=${SETOPT_KEYS[$1]}; str=''; strcomp=''
-  case $optkey in 'USERNAME') : 32;; 'HOSTNAME') : 64;; *) : 0;;esac
+  case $optkey in 'ESP'|'USERNAME') : 32;; 'HOSTNAME') : 64;; *) : 0;;esac
   ((idx=0,lim=$_))
   draw_window
   prompt 'new'
@@ -445,23 +441,37 @@ seq_ttin() {
     case $key in
       $'\x0A') # ENTER
         [[ -z "$str" ]] && { prompt 'err' "NO INPUT RECEIVED"; continue;}
-        [[ $optkey == 'USERNAME' ]] && {
-          [[ "$str" =~ .*[$].*.$ ]] && {
-            prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
-        }
-        [[ $optkey =~ PASS$ ]] && {
-          [[ -z "$strcomp" ]] && {
-            strcomp="$str"; str=''
-            printf '\x9BARE-ENTER %s TO CONFIRM\x1B8' "$optkey"; continue
-          } || {
-            [[ "$strcomp" != "$str" ]] && {
-              strcomp=''; str=''
-              printf '\x9BAENTER DESIRED %s      \x1B8' $optkey
-              prompt 'err' "INVALID MATCH"; continue
+        case $optkey in
+          'USERNAME')
+            [[ "$str" =~ .*[$].*.$ ]] && {
+              prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
+          ;;
+          ESP*)
+            ! [[ "$str" =~ ^([1-9][0-9]*)(G|M)(ib)?$ ]] && {
+              prompt 'err' "VALID SPECIFIERS: [:digit:]G(ib)/M(ib)"; continue;}
+          ;;&
+          ROOT*)
+            ! [[ "$str" =~ ^([1-9][0-9]*)(G)(ib)?$ ]] && {
+              prompt 'err' "VALID SPECIFIERS: [:digit:]G(ib)"; continue;}
+          ;&
+          *SIZE)
+            str="${BASH_REMATCH[1]}${BASH_REMATCH[2]}ib"
+          ;;&
+          *PASS)
+            [[ -z "$strcomp" ]] && {
+              strcomp="$str"; str=''
+              printf '\x9BARE-ENTER %s TO CONFIRM\x1B8' "$optkey"; continue
+            } || {
+              [[ "$strcomp" != "$str" ]] && {
+                strcomp=''; str=''
+                printf '\x9BAENTER DESIRED %s      \x1B8' "${optkey//_/ }"
+                prompt 'err' "INVALID MATCH"; continue
+              }
             }
-          }
-          : "hidden"
-        } || : "$str"
+            : "hidden"
+          ;;
+          *) : "$str";;
+        esac
         setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${_}"
         setopt_pairs[$optkey]="$str"
         echo "${setopt_pairs[$optkey]}"
@@ -523,7 +533,7 @@ nav_single() {
             : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
           printf '  \x9B7m%s\x1B8' "$_"
           case ${SETOPT_KEYS[$idx]} in
-            *NAME|*PASS) seq_ttin $idx;;
+            *SIZE|*NAME|*PASS) seq_ttin $idx;;
             SAVE*|LOAD*) echo 'yas';;
             *) seq_select $idx;;
           esac
