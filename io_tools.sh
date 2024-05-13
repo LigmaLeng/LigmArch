@@ -1,3 +1,36 @@
+#!/usr/bin/env bash
+#
+# TODO: Write file header
+#
+# TODO: create /etc/modules-load.d/zram.conf
+# zram
+#
+# TODO: create /etc/udev/rules.d/99-zram.rules
+# ACTION=="add", KERNEL=="zram0", ATTR{comp_algorithm}="zstd",
+# ATTR{disksize}="TODO", RUN="/usr/bin/mkswap -U clear /dev/%k", TAG+="systemd"
+#
+# TODO: add to /etc/fstab
+# /dev/zram0 none swap defaults,pri=100 0 0
+#
+# TODO: disable zswap
+# add zswap.enabled=0 to kernel params
+#
+# TODO: create /etc/systemd/sleep.conf.d/disable-sleep.conf
+# [Sleep]
+# AllowSuspend=yes
+# AllowHibernation=no
+#
+# TODO: ext4 bytes per inode/casefold/reserved_blocks
+# mkfs.ext4 -T largefile -m 0 -O casefold /dev/device
+#
+# TODO: modify /etc/mkinitcpio.conf
+# HOOKS=(base systemd autodetect microcode modconf -kms
+#       keyboard sd-vconsole block lvm2 filesystems fsck)
+#       
+# TODO: add kernel parameters
+# nvidia_drm.modeset=1
+# nvidia_drm.fbdev=1
+
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
 TEMPLATE_DIR="${CTX_DIR}/options.setup"
