@@ -2,6 +2,12 @@
 #
 # TODO: Write file header
 #
+# TODO: add microcode detection
+# TODO: pacman parallel downloads
+# TODO: makepkg optimisations
+# TODO: /sys/block/nvme0n1/queue/discard_max_hw_bytes
+# TODO: /sys/block/nvme0n1/queue/scheduler
+#
 # TODO: create /etc/modules-load.d/zram.conf
 # zram
 #
@@ -21,26 +27,36 @@
 # AllowHibernation=no
 #
 # TODO: ext4 bytes per inode/casefold/reserved_blocks
-# mkfs.ext4 -T largefile -m 0 -O casefold /dev/device
+# mkfs.ext4 -b $blocksize -T huge -O casefold /dev/home
+# mkfs.ext4 -b $blocksize -O casefold /dev/root
 #
 # TODO: modify /etc/mkinitcpio.conf
 # HOOKS=(base systemd autodetect microcode modconf -kms
 #       keyboard sd-vconsole block lvm2 filesystems fsck)
 #       
 # TODO: add kernel parameters
+# mem_sleep_default=deep
 # nvidia_drm.modeset=1
 # nvidia_drm.fbdev=1
+#
+# TODO: add module parameters
+# NVreg_PreserveVideoMemoryAllocations=1
+# NVreg_UsePageAttributeTable=1
+# NVreg_EnableStreamMemOPs=1
+# NVreg_EnablePCIeGen3=1
+# NVreg_EnableMSI=1
 
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
-TEMPLATE_DIR="${CTX_DIR}/options.setup"
+TEMPLATE_PATH="${CTX_DIR}/options.setup"
 READ_OPTS=(-rs -t 0.02)
-readonly CTX_DIR CACHE_DIR TEMPLATE_DIR READ_OPTS
+readonly CTX_DIR CACHE_DIR TEMPLATE_PATH READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a SETOPT_KEYS SETOPT_KEYS_F
-declare -a KEYMAP MIRRORS LOCALE BLOCK_DEVICE PARTITION_ALIGNMENT
-declare -a KERNEL TIMEZONE VIDEO_DRIVERS PACKAGES EXTRAS
-declare -a setopt_pairs_f win_ctx_a
+declare -a KEYMAP MIRRORS LOCALE KERNEL TIMEZONE\
+           BLOCK_DEVICE PARTITION_ALIGNMENT\
+           VIDEO_DRIVERS PACKAGES EXTRAS\
+           SETOPT_KEYS SETOPT_KEYS_F\
+           setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
 
@@ -327,7 +343,7 @@ options_init() {
         }
       ;;
     esac
-  done < "$TEMPLATE_DIR"
+  done < "$TEMPLATE_PATH"
   # Format spacing for printing setup options
   for((i=-1;++i<${#SETOPT_KEYS[@]};)){
     key="${SETOPT_KEYS[$i]}"
@@ -367,12 +383,13 @@ options_init() {
   while read; do
     LOCALE+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
-  while read; do
-    [[ $REPLY =~ (sd|hd|nvme|mmcblk[0-9]*$) ]] &&
-      BLOCK_DEVICE+=("$REPLY")
-  done < <(lsblk -dpno NAME)
-  declare -r SETOPT_KEYS SETOPT_KEYS_F KEYMAP MIRRORS LOCALE BLOCK_DEVICE
-  declare -r PARTITION_ALIGNMENT KERNEL TIMEZONE VIDEO_DRIVERS EXTRAS
+  for i in /sys/block/*;{
+    [[ $i =~ (sd|hd|nvme|mmcblk[0-9]*$) ]] && BLOCK_DEVICE+=("/dev/${i##*/}")
+  }
+  declare -r KEYMAP MIRRORS LOCALE KERNEL TIMEZONE\
+             BLOCK_DEVICE PARTITION_ALIGNMENT\
+             VIDEO_DRIVERS PACKAGES EXTRAS\
+             SETOPT_KEYS SETOPT_KEYS_F
 }
 
 draw_window() {
@@ -567,7 +584,11 @@ nav_single() {
           printf '  \x9B7m%s\x1B8' "$_"
           case ${SETOPT_KEYS[$idx]} in
             *SIZE|*NAME|*PASS) seq_ttin $idx;;
-            SAVE*|LOAD*) echo 'yas';;
+            SAVE*)
+              save_config
+              printf '\xAF \x9B7m[   SAVED   ]\x1B8'
+              ;;
+            LOAD*) echo 'yas';;
             *) seq_select $idx;;
           esac
         } || return 0
@@ -711,6 +732,26 @@ nav_multi() {
       ;;
     esac
   }
+}
+
+save_config(){
+  local key white_sp
+  exec {save_fd}>"${CACHE_DIR}/options.conf"
+  for key in ${SETOPT_KEYS[@]};{
+    [[ $key =~ ^(.*PASS|.*CONFIG|INSTALL)$ ]] && continue
+    [[ -z "${setopt_pairs[$key]}" ]] && continue
+    printf '%s\n' "[$key]" >&$save_fd
+    [[ $key =~ ^(MIRRORS|PACKAGES|EXTRAS)$ ]] && {
+      printf 'list =\n      ' >&$save_fd
+      : "${setopt_pairs[$key]//  /$'\n',}"
+      printf '%s\n\n' "${_//,/      }" >&$save_fd
+    } || printf 'value = %s\n\n' "${setopt_pairs[$key]}" >&$save_fd
+  }
+  exec {save_fd}>&-
+}
+
+load_config(){
+none loaded
 }
 
 main() {

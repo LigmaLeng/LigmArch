@@ -21,7 +21,7 @@ list =
 [ESP_SIZE]
 value = 1Gib
 
-[ROOT_FS_SIZE]
+[ROOT_VOLUME_SIZE]
 value = 64Gib
 
 [KERNEL]
@@ -60,15 +60,18 @@ list =
       cmake
       curl
       dialog
+      dosfstools
+      e2fsprogs
       git
       man-db
       man-pages
       networkmanager
       neovim
       openssh
+      xdg-user-dirs
 
 [EXTRAS]
 list =
       multilib
       zram-swap
-      increase-bytes-per-inode
+      non-default-Ext4
