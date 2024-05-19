@@ -55,6 +55,7 @@ declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
+hash sort
 
 die() {
   local -a bash_trace
@@ -326,17 +327,17 @@ options_init() {
         setopt_pairs[$key]=${REPLY#*= }
       ;;
       list*|option*)
-        while read; do
-          [[ -z $REPLY ]] && break ||
-            setopt_pairs[$key]+="  ${REPLY//[[:space:]]}"
-        done
-        setopt_pairs[$key]="${setopt_pairs[$key]#  }"
         declare -ga $key
-        [[ $key != 'MIRRORS' ]] && {
-          local -n ref=$key
-          ref=(${setopt_pairs[$key]})
-          ! [[ $key =~ ^(PACKAGES|EXTRAS)$ ]] && setopt_pairs[$key]=${ref[0]}
-        }
+        local -n ref=$key
+        while read; do
+          [[ -z $REPLY ]] && break
+          ref+=("${REPLY#"${REPLY%%[![:space:]]*}"}")
+          setopt_pairs[$key]+="  ${ref[-1]}"
+        done
+        [[ $key =~ ^(PACKAGES|EXTRAS)$ ]] && : "${setopt_pairs[$key]#  }" ||
+          : "${ref[0]}"
+        setopt_pairs[$key]="$_"
+        [[ $key == 'MIRRORS' ]] && ref=()
       ;;
     esac
   done < "$TEMPLATE_PATH"
@@ -345,7 +346,7 @@ options_init() {
     key="${SETOPT_KEYS[$i]}"
     SETOPT_KEYS_F+=("${key//_/ }$(echoes '\x20' $((lim-${#key}+3)))")
     setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
-    [[ $key =~ (NAME|PASS)$ ]] && setopt_pairs[$key]=''
+    [[ $key =~ ^(.*NAME|.*PASS)$ ]] && setopt_pairs[$key]=''
   }
   # Retrieve currently active mirrors from cache if available
   # Else retrieve current mirrorlist from official mirrorlist generator page
@@ -441,20 +442,17 @@ seq_select() {
   # If option supports multiple values, convert string values to indices
   [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
     for((i=-1;++i<${#ref[@]};)){
-      [[ "${setopt_pairs[$optkey]}" =~ ^${ref[$i]}[[:space:]]* ]] && {
-        setopt_pairs[$optkey]="${setopt_pairs[$optkey]/${BASH_REMATCH[0]}}"
-        w[idxs]+=",$i"
-      }
+      [[ "${setopt_pairs[$optkey]}" =~ ${ref[$i]} ]] && w[idxs]+=",$i"
     }
     w[idxs]="${w[idxs]#-1,}"
   }
   draw_window
   win_ctx_op 'nav'
-  (($?)) || {
+  ((!$?)) && {
     [[ ${w[pg_type]} == 'multi' ]] && {
-      setopt_pairs[$optkey]=''
       # If option supports multiple values, convert indices to string values
       [[ ${w[idxs]} == '-1' ]] && setopt_pairs[$optkey]='unset' || {
+        setopt_pairs[$optkey]=''
         while read; do
           setopt_pairs[$optkey]+="  ${ref[$REPLY]}"
         done < <(sort -n <<< "${w[idxs]//,/$'\n'}")
@@ -521,7 +519,6 @@ seq_ttin() {
         esac
         setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${_}"
         setopt_pairs[$optkey]="$str"
-        echo "${setopt_pairs[$optkey]}"
       ;&
       $'\x1B') win_ctx_op 'pop'; return;; # ESC
       $'\x9BD') ((idx>0)) && ((idx--));; # LEFT
@@ -736,8 +733,8 @@ save_config(){
   local key white_sp
   exec {save_fd}>"${CACHE_DIR}/options.conf"
   for key in ${SETOPT_KEYS[@]};{
-    [[ $key =~ ^(.*PASS|.*CONFIG|INSTALL)$ ]] && continue
-    [[ -z "${setopt_pairs[$key]}" ]] && continue
+    [[ $key =~ ^(.*PASS|.*CONFIG|INSTALL)$ || -z "${setopt_pairs[$key]}" ]] &&
+      continue
     printf '%s\n' "[$key]" >&$save_fd
     [[ $key =~ ^(MIRRORS|PACKAGES|EXTRAS)$ ]] && {
       printf 'list =\n      ' >&$save_fd
@@ -756,6 +753,7 @@ load_config(){
       '['*) : "${REPLY#[}"; key="${_%]}";;
       value*) setopt_pairs[$key]=${REPLY#*= };;
       list*)
+        setopt_pairs[$key]=''
         while read; do
           [[ -z $REPLY ]] && break ||
             setopt_pairs[$key]+="  ${REPLY#"${REPLY%%[![:space:]]*}"}"
