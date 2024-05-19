@@ -52,11 +52,7 @@ TEMPLATE_PATH="${CTX_DIR}/options.setup"
 READ_OPTS=(-rs -t 0.02)
 readonly CTX_DIR CACHE_DIR TEMPLATE_PATH READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a KEYMAP MIRRORS LOCALE KERNEL TIMEZONE\
-           BLOCK_DEVICE PARTITION_ALIGNMENT\
-           VIDEO_DRIVERS PACKAGES EXTRAS\
-           SETOPT_KEYS SETOPT_KEYS_F\
-           setopt_pairs_f win_ctx_a
+declare -a SETOPT_KEYS SETOPT_KEYS_F setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
 
@@ -127,7 +123,7 @@ display_init() {
   printf '\x9B%s' 2J 31m ?25l ?7l
 }
 
-display_cleave() {
+display_cleave(){
   local fissure i lim
   fissure=$(echoes '\xC4' $((COLUMNS-2)))
   # Place cursor on transverse plane
@@ -314,14 +310,14 @@ options_init() {
   lim=0
   # Create cache directory if non-existent
   [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
-  # Parse config file
+  # Parse config template
   while read; do
     case $REPLY in
       # Brackets demarcate separate sections while parsing values that
       # correspond to the resulting header string after trimming '[' & ']'
       '['*)
         : "${REPLY#[}"
-        key=("${_%]}")
+        key="${_%]}"
         SETOPT_KEYS+=("$key")
         # Keep track of longest optkey for page formatting purposes
         ((lim=${#key}>lim?${#key}:$lim))
@@ -329,13 +325,13 @@ options_init() {
       value*)
         setopt_pairs[$key]=${REPLY#*= }
       ;;
-      list*)
-        read setopt_pairs[$key]
+      list*|option*)
         while read; do
-          [[ -z $REPLY ]] && {
-            setopt_pairs[$key]="${setopt_pairs[$key]#  }" && break
-          } || { setopt_pairs[$key]+="  ${REPLY//[[:space:]]}";}
+          [[ -z $REPLY ]] && break ||
+            setopt_pairs[$key]+="  ${REPLY//[[:space:]]}"
         done
+        setopt_pairs[$key]="${setopt_pairs[$key]#  }"
+        declare -ga $key
         [[ $key != 'MIRRORS' ]] && {
           local -n ref=$key
           ref=(${setopt_pairs[$key]})
@@ -350,11 +346,6 @@ options_init() {
     SETOPT_KEYS_F+=("${key//_/ }$(echoes '\x20' $((lim-${#key}+3)))")
     setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
     [[ $key =~ (NAME|PASS)$ ]] && setopt_pairs[$key]=''
-  }
-  # Append option keys relevant to config based actions
-  for key in {SAVE_CONFIG,LOAD_CONFIG,INSTALL};{
-    SETOPT_KEYS+=("$key")
-    setopt_pairs_f+=("[${key/_/ }]")
   }
   # Retrieve currently active mirrors from cache if available
   # Else retrieve current mirrorlist from official mirrorlist generator page
@@ -386,10 +377,16 @@ options_init() {
   for i in /sys/block/*;{
     [[ $i =~ (sd|hd|nvme|mmcblk[0-9]*$) ]] && BLOCK_DEVICE+=("/dev/${i##*/}")
   }
-  declare -r KEYMAP MIRRORS LOCALE KERNEL TIMEZONE\
-             BLOCK_DEVICE PARTITION_ALIGNMENT\
-             VIDEO_DRIVERS PACKAGES EXTRAS\
-             SETOPT_KEYS SETOPT_KEYS_F
+  for key in ${SETOPT_KEYS};{
+    [[ $key =~ (SIZE|PASS|NAME)$ ]] && continue
+    readonly $key
+  }
+  # Append option keys relevant to config based actions
+  for key in {SAVE_CONFIG,LOAD_CONFIG,INSTALL};{
+    SETOPT_KEYS+=("$key")
+    setopt_pairs_f+=("[${key/_/ }]")
+  }
+  readonly SETOPT_KEYS SETOPT_KEYS_F
 }
 
 draw_window() {
@@ -495,12 +492,12 @@ seq_ttin() {
           'USERNAME')
             [[ "$str" =~ .*[$].*.$ ]] && {
               prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
-          ;;
+          ;;&
           ESP*)
             ! [[ "$str" =~ ^([1-9][0-9]*)(G|M)(ib)?$ ]] && {
               prompt 'err' "VALID SPECIFIERS: [:digit:]G(ib)/M(ib)"; continue;}
           ;;&
-          ROOT*)
+          ROOT_VOL*)
             ! [[ "$str" =~ ^([1-9][0-9]*)(G)(ib)?$ ]] && {
               prompt 'err' "VALID SPECIFIERS: [:digit:]G(ib)"; continue;}
           ;&
@@ -584,11 +581,12 @@ nav_single() {
           printf '  \x9B7m%s\x1B8' "$_"
           case ${SETOPT_KEYS[$idx]} in
             *SIZE|*NAME|*PASS) seq_ttin $idx;;
-            SAVE*)
-              save_config
-              printf '\xAF \x9B7m[   SAVED   ]\x1B8'
+            SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
+            LOAD*)
+              load_config
+              (($?)) && : 'NO SAVEFILE' || : 'SAVE LOADED'
+              printf '\xAF \x9B7m[%s]\x1B8' "$_"
               ;;
-            LOAD*) echo 'yas';;
             *) seq_select $idx;;
           esac
         } || return 0
@@ -751,7 +749,28 @@ save_config(){
 }
 
 load_config(){
-none loaded
+  local key i
+  ! [[ -a "${CACHE_DIR}/options.conf" ]] && return 1
+  while read; do
+    case $REPLY in
+      '['*) : "${REPLY#[}"; key="${_%]}";;
+      value*) setopt_pairs[$key]=${REPLY#*= };;
+      list*)
+        while read; do
+          [[ -z $REPLY ]] && break ||
+            setopt_pairs[$key]+="  ${REPLY#"${REPLY%%[![:space:]]*}"}"
+        done
+        setopt_pairs[$key]="${setopt_pairs[$key]#  }"
+      ;;
+    esac
+  done < "${CACHE_DIR}/options.conf"
+  for((i=-1;++i<${#SETOPT_KEYS_F[@]};)){
+    key="${SETOPT_KEYS[$i]}"
+    [[ $key == *PASS ]] && { setopt_pairs[$key]=''; : 'unset';} ||
+      : "${setopt_pairs[$key]}"
+    setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}$_"
+  }
+  print_pg
 }
 
 main() {

@@ -12,11 +12,11 @@ value = en_AU.UTF-8
 value = unset
 
 [PARTITION_ALIGNMENT]
-list =
-      default
-      512b
-      2048b
-      4096b
+option =
+        default
+        512b
+        2048b
+        4096b
 
 [ESP_SIZE]
 value = 1Gib
@@ -25,9 +25,9 @@ value = 1Gib
 value = 64Gib
 
 [KERNEL]
-list =
-      linux
-      linux-lts
+option =
+        linux
+        linux-lts
 
 [TIMEZONE]
 value = Australia/Melbourne
@@ -45,14 +45,14 @@ value = unset
 value = unset
 
 [VIDEO_DRIVERS]
-list =
-      none
-      AMDGPU(open-source)
-      AMDATI(open-source)
-      NVIDIA(proprietary)
-      NVIDIA(open-source)
-      NOUVEAU(open-source)
-      INTEL(open-source)
+option =
+        none
+        AMDGPU(open-source)
+        AMDATI(open-source)
+        NVIDIA(proprietary)
+        NVIDIA(open-source)
+        NOUVEAU(open-source)
+        INTEL(open-source)
 
 [PACKAGES]
 list =
@@ -74,4 +74,5 @@ list =
 list =
       multilib
       zram-swap
-      non-default-Ext4
+      tuned-Ext4
+
