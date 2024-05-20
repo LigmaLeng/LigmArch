@@ -124,7 +124,7 @@ display_init() {
   printf '\x9B%s' 2J 31m ?25l ?7l
 }
 
-display_cleave(){
+display_cleave() {
   local fissure i lim
   fissure=$(echoes '\xC4' $((COLUMNS-2)))
   # Place cursor on transverse plane
@@ -207,7 +207,7 @@ print_pg() {
   [[ "${1:-}" == 'nocurs' ]] || printf '\xAF\x9BD'
 }
 
-prompt(){
+prompt() {
   local str white_sp i
   white_sp=$(echoes '\x20' 65)
   case $1 in
@@ -237,7 +237,7 @@ prompt(){
   esac
 }
 
-win_ctx_op(){
+win_ctx_op() {
   local -n w wa
   local attr
   w=win_ctx; wa=win_ctx_a
@@ -569,7 +569,9 @@ nav_single() {
   for((;;)){
     get_key key
     case $key in
-      q|$'\x1B') return 1;; # ESC
+      q|$'\x1B') # ESC
+        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && exit_prompt || return 1
+      ;;
       $'\x0A') # ENTER
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
           : "${ref[$idx]}"
@@ -608,8 +610,8 @@ nav_single() {
       ;&
       k|$'\x9BA') # UP/DOWN fallthrough
         [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
-          ((${#_}>COLUMNS-6)) && {
-            : "${_::$((COLUMNS-8))}${_: -2}"; : "${_%  *} ...${_: -2}";}
+          ((${#_}>COLUMNS-4)) && {
+            : "${_::$((COLUMNS-6))}${_: -2}"; : "${_%  *} ...${_: -2}";}
           ((${#ref[$idx]}>COLUMNS-8)) && {
             : "$_,${ref[$idx]::$((COLUMNS-8))}"
             : "${_%  *} ..."
@@ -706,7 +708,7 @@ nav_multi() {
         [[ ${win_ctx[idxs]} == '-1' ]] && win_ctx[idxs]="$idx" || {
           [[ ${win_ctx[idxs]} =~ (^${idx},|,${idx},|,${idx}$|^${idx}$) ]] && {
             : "${BASH_REMATCH[0]}"
-            [[ ${_:: -1} == ',' ]] && {
+            [[ ${_: -1} == ',' ]] && {
               [[ ${_:: 1} == ',' ]] && : "${win_ctx[idxs]/$_/,}" ||
                 : "${win_ctx[idxs]#$_}"
             } || : "${win_ctx[idxs]%$_}"
@@ -729,7 +731,7 @@ nav_multi() {
   }
 }
 
-save_config(){
+save_config() {
   local key white_sp
   exec {save_fd}>"${CACHE_DIR}/options.conf"
   for key in ${SETOPT_KEYS[@]};{
@@ -745,7 +747,7 @@ save_config(){
   exec {save_fd}>&-
 }
 
-load_config(){
+load_config() {
   local key i
   ! [[ -a "${CACHE_DIR}/options.conf" ]] && return 1
   while read; do
@@ -769,6 +771,10 @@ load_config(){
     setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}$_"
   }
   print_pg
+}
+
+validate_config() {
+  :
 }
 
 main() {
