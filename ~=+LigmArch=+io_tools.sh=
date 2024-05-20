@@ -143,21 +143,21 @@ silent! normal! zE
 118,126fold
 127,152fold
 153,209fold
-210,239fold
-240,279fold
-280,308fold
-309,392fold
-393,407fold
-408,425fold
-426,431fold
-432,472fold
-473,561fold
-562,655fold
-656,733fold
-734,749fold
-750,775fold
-776,779fold
-780,789fold
+210,241fold
+242,281fold
+282,311fold
+312,395fold
+396,410fold
+411,428fold
+429,434fold
+435,475fold
+476,564fold
+565,659fold
+660,737fold
+738,753fold
+754,779fold
+780,790fold
+791,800fold
 let &fdl = &fdl
 let s:l = 1 - ((0 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
@@ -166,5 +166,6 @@ normal! zt
 keepjumps 1
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
+nohlsearch
 doautoall SessionLoadPost
 " vim: set ft=vim :

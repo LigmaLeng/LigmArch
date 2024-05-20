@@ -47,12 +47,12 @@ value = unset
 [VIDEO_DRIVERS]
 option =
         none
-        AMDGPU(open-source)
-        AMDATI(open-source)
-        NVIDIA(proprietary)
-        NVIDIA(open-source)
-        NOUVEAU(open-source)
-        INTEL(open-source)
+        AMDGPU (open-source)
+        AMDATI (open-source)
+        NVIDIA (proprietary)
+        NVIDIA (open-source)
+        NOUVEAU (open-source)
+        INTEL (open-source)
 
 [PACKAGES]
 list =
@@ -74,5 +74,5 @@ list =
 list =
       multilib
       zram-swap
-      tuned-Ext4
+      Tuned-Ext4
 

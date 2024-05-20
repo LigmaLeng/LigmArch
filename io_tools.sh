@@ -220,6 +220,8 @@ prompt() {
       }
     ;;
     'new')
+      printf '  %s\x1B8\x9BB  %s\x1B8\x9B2B' "$white_sp" "$white_sp"
+      printf '  %s\x1B8' "$white_sp"
       : "${win_ctx[offset]}"
       printf '\xAF ENTER DESIRED %s\x1B8\x9BB' "${SETOPT_KEYS[$_]//_/ }"
       printf '  \x1B7\x9BB\x9BD:\x9B7m \x1B8' 
@@ -281,6 +283,7 @@ exit_prompt() {
   local exit_query exit_opts
   [[ ${FUNCNAME[1]} == 'exit_prompt' ]] && return
   exit_query='Abort setup process'; exit_opts=('(Y|y)es' '(N|n)o')
+  [[ "${1:-}" == 'config' ]] && exit_query="Config error: ${exit_query}"
   win_ctx_op 'push'
   display_cleave
   # Center cursor
@@ -585,7 +588,8 @@ nav_single() {
               load_config
               (($?)) && : 'NO SAVEFILE' || : 'SAVE LOADED'
               printf '\xAF \x9B7m[%s]\x1B8' "$_"
-              ;;
+            ;;
+            INSTALL) install_config;;
             *) seq_select $idx;;
           esac
         } || return 0
@@ -773,8 +777,15 @@ load_config() {
   print_pg
 }
 
-validate_config() {
-  :
+install_config() {
+  local key
+  # Check options
+  for key in {MIRRORS,BLOCK_DEVICE};{
+    [[ ${setopt_pairs[$key]} == 'unset' ]] && { exit_prompt 'config'; return;}
+  }
+  for key in {ROOTPASS,USERNAME,USERPASS,HOSTNAME};{
+    [[ -z "${setopt_pairs[$key]}" ]] && { exit_prompt 'config'; return;}
+  }
 }
 
 main() {
