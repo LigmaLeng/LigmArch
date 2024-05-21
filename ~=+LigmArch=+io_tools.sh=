@@ -131,39 +131,45 @@ setlocal nowinfixwidth
 setlocal nowrap
 setlocal wrapmargin=0
 silent! normal! zE
-1,48fold
-49,59fold
-60,68fold
-69,70fold
-71,77fold
-78,88fold
-89,101fold
-102,106fold
-107,117fold
-118,126fold
-127,152fold
-153,209fold
-210,241fold
-242,281fold
-282,311fold
-312,395fold
-396,410fold
-411,428fold
-429,434fold
-435,475fold
-476,564fold
-565,659fold
-660,737fold
-738,753fold
-754,779fold
-780,790fold
-791,800fold
+1,46fold
+47,57fold
+58,66fold
+67,68fold
+69,75fold
+76,86fold
+87,99fold
+100,104fold
+105,115fold
+116,124fold
+125,150fold
+151,207fold
+208,239fold
+240,279fold
+280,309fold
+316,344fold
+346,351fold
+354,369fold
+375,378fold
+380,385fold
+310,397fold
+398,412fold
+413,430fold
+431,436fold
+437,477fold
+478,561fold
+562,656fold
+657,734fold
+735,750fold
+751,776fold
+777,792fold
+793,807fold
+808,817fold
 let &fdl = &fdl
-let s:l = 1 - ((0 * winheight(0) + 21) / 43)
+let s:l = 777 - ((719 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 1
+keepjumps 777
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
 nohlsearch

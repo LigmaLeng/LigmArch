@@ -14,15 +14,12 @@ value = unset
 [PARTITION_ALIGNMENT]
 option =
         default
-        512b
-        2048b
-        4096b
+        512B
+        2048B
+        4096B
 
 [ESP_SIZE]
-value = 1Gib
-
-[ROOT_VOLUME_SIZE]
-value = 64Gib
+value = 1GiB
 
 [KERNEL]
 option =

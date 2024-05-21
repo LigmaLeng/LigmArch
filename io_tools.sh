@@ -27,8 +27,7 @@
 # AllowHibernation=no
 #
 # TODO: ext4 bytes per inode/casefold/reserved_blocks
-# mkfs.ext4 -b $blocksize -T huge -O casefold /dev/home
-# mkfs.ext4 -b $blocksize -O casefold /dev/root
+# mkfs.ext4 -b $blocksize -m 1 -T huge -O casefold /dev/root
 #
 # TODO: modify /etc/mkinitcpio.conf
 # HOOKS=(base systemd autodetect microcode modconf -kms
@@ -40,7 +39,6 @@
 # nvidia_drm.fbdev=1
 #
 # TODO: add module parameters
-# NVreg_PreserveVideoMemoryAllocations=1
 # NVreg_UsePageAttributeTable=1
 # NVreg_EnableStreamMemOPs=1
 # NVreg_EnablePCIeGen3=1
@@ -378,8 +376,12 @@ options_init() {
   while read; do
     LOCALE+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
   done < "/usr/share/i18n/SUPPORTED"
-  for i in /sys/block/*;{
-    [[ $i =~ (sd|hd|nvme|mmcblk[0-9]*$) ]] && BLOCK_DEVICE+=("/dev/${i##*/}")
+  # Retrieve block devices from sysfs
+  for key in /sys/block/*;{
+    [[ $key =~ (sd|hd|nvme) ]] || continue
+    i=$(<"$key/size")
+    ((i=i*5120>>30))
+    BLOCK_DEVICE+=("/dev/${key##*/} "$'\xF7'" ${i:: -1}.${i: -1}Gib")
   }
   for key in ${SETOPT_KEYS};{
     [[ $key =~ (SIZE|PASS|NAME)$ ]] && continue
@@ -464,7 +466,7 @@ seq_select() {
     } || {
       # If selecting for LOCALE strip trailing string referring to the locales
       # corresponding character mapping as well as any remaining whitespace
-      [[ $optkey == 'LOCALE' ]] && {
+      [[ $optkey == 'LOCALE' || $optkey == 'BLOCK_DEVICE' ]] && {
         : "${ref[${w[idx]}]}"; setopt_pairs[$optkey]=${_%% *}
       } || setopt_pairs[$optkey]=${ref[${w[idx]}]}
     }
@@ -495,19 +497,14 @@ seq_ttin() {
               prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
           ;;&
           ESP*)
-            ! [[ "$str" =~ ^([1-9][0-9]*)(G|M)(ib)?$ ]] && {
-              prompt 'err' "VALID SPECIFIERS: [:digit:]G(ib)/M(ib)"; continue;}
-          ;;&
-          ROOT_VOL*)
-            ! [[ "$str" =~ ^([1-9][0-9]*)(G)(ib)?$ ]] && {
-              prompt 'err' "VALID SPECIFIERS: [:digit:]G(ib)"; continue;}
-          ;&
-          *SIZE)
-            str="${BASH_REMATCH[1]}${BASH_REMATCH[2]}ib"
+            ! [[ "$str" =~ ^([1-9][0-9]*)(G|M)(iB)?$ ]] && {
+              prompt 'err' "VALID SPECIFIERS: [:digit:]G(iB)/M(iB)"; continue;}
+            str="${BASH_REMATCH[1]}${BASH_REMATCH[2]}iB"
           ;;&
           *PASS)
             [[ -z "$strcomp" ]] && {
               strcomp="$str"; str=''
+              ((idx=0))
               printf '\x9BARE-ENTER %s TO CONFIRM\x1B8' "$optkey"; continue
             } || {
               [[ "$strcomp" != "$str" ]] && {
@@ -777,8 +774,25 @@ load_config() {
   print_pg
 }
 
+format_disk() {
+  local tgt
+  local -a flags
+  tgt=${setopt_pairs[BLOCK_DEVICE]}
+  umount -q $tgt
+  wipefs -af $tgt
+  [[ "${setopt_pairs[PARTITION_ALIGNMENT]}" == 'default' ]] && flags=(-I) ||
+    flags=(-a ${setopt_pairs[PARTITION_ALIGNMENT]%B} -I)
+  sgdisk ${flags[@]} -n 1:0:+${setopt_pairs[ESP_SIZE]%iB} -t 1:EF00 $tgt
+  sgdisk ${flags[@]} -n 2:0:0 -t 2:8304 $tgt
+  partprobe $tgt
+  mkfs.fat -F 32 "${tgt}p1"
+  flags=(-b ${setopt_pairs[PARTITION_ALIGNMENT]%B} -m 1 -T huge -O casefold)
+  mkfs.ext4 ${flags[@]} "${tgt}p2"
+}
+
 install_config() {
   local key
+  exec {log_fd}>"${CACHE_DIR}/setup.log"
   # Check options
   for key in {MIRRORS,BLOCK_DEVICE};{
     [[ ${setopt_pairs[$key]} == 'unset' ]] && { exit_prompt 'config'; return;}
@@ -786,6 +800,9 @@ install_config() {
   for key in {ROOTPASS,USERNAME,USERPASS,HOSTNAME};{
     [[ -z "${setopt_pairs[$key]}" ]] && { exit_prompt 'config'; return;}
   }
+  format_disk >&$log_fd
+  exec {log_fd}>&-
+  exit 0
 }
 
 main() {
