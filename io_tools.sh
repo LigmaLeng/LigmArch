@@ -23,14 +23,11 @@
 #
 # TODO: create /etc/systemd/sleep.conf.d/disable-sleep.conf
 # [Sleep]
-# AllowSuspend=yes
+# AllowSuspend=no
 # AllowHibernation=no
 #
-# TODO: ext4 bytes per inode/casefold/reserved_blocks
-# mkfs.ext4 -b $blocksize -m 1 -T huge -O casefold /dev/root
-#
 # TODO: modify /etc/mkinitcpio.conf
-# HOOKS=(base systemd autodetect microcode modconf -kms
+# HOOKS=(systemd autodetect microcode modconf -kms
 #       keyboard sd-vconsole block lvm2 filesystems fsck)
 #       
 # TODO: add kernel parameters
@@ -335,8 +332,9 @@ options_init() {
           ref+=("${REPLY#"${REPLY%%[![:space:]]*}"}")
           setopt_pairs[$key]+="  ${ref[-1]}"
         done
-        [[ $key =~ ^(PACKAGES|EXTRAS)$ ]] && : "${setopt_pairs[$key]#  }" ||
-          : "${ref[0]}"
+        [[ $key =~ ^(PACKAGES|EXTRAS|MOUNT|EXT4_TUNING) ]] && {
+          : "${setopt_pairs[$key]#  }"  
+        } || : "${ref[0]}"
         setopt_pairs[$key]="$_"
         [[ $key == 'MIRRORS' ]] && ref=()
       ;;
@@ -441,7 +439,7 @@ seq_select() {
   win_ctx_op 'push'
   # Refer to corresponding arrays and attributes belonging to option key
   : "2,${SAGITTAL},$((${#ref[@]}<LINES-4?${#ref[@]}+2:LINES-2)),$((SAGITTAL-1))"
-  [[ $optkey =~ ^(MIRRORS|PACKAGES|EXTRAS)$ ]] && {
+  [[ $optkey =~ ^(MIRRORS|PACKAGES|EXTRAS|MOUNT|EXT4_TUNING) ]] && {
     : "$_;${optkey};multi";} || : "$_;${optkey};single"
   win_ctx_op 'set' "$_"
   # If option supports multiple values, convert string values to indices
@@ -579,7 +577,7 @@ nav_single() {
             : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
           printf '  \x9B7m%s\x1B8' "$_"
           case ${SETOPT_KEYS[$idx]} in
-            *SIZE|*NAME|*PASS) seq_ttin $idx;;
+            ESP*|*NAME|*PASS) seq_ttin $idx;;
             SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
             LOAD*)
               load_config
@@ -739,7 +737,7 @@ save_config() {
     [[ $key =~ ^(.*PASS|.*CONFIG|INSTALL)$ || -z "${setopt_pairs[$key]}" ]] &&
       continue
     printf '%s\n' "[$key]" >&$save_fd
-    [[ $key =~ ^(MIRRORS|PACKAGES|EXTRAS)$ ]] && {
+    [[ $key =~ ^(MIRRORS|PACKAGES|EXTRAS|MOUNT|EXT4_TUNING) ]] && {
       printf 'list =\n      ' >&$save_fd
       : "${setopt_pairs[$key]//  /$'\n',}"
       printf '%s\n\n' "${_//,/      }" >&$save_fd
@@ -775,19 +773,25 @@ load_config() {
 }
 
 format_disk() {
-  local tgt
+  local -n opt
   local -a flags
-  tgt=${setopt_pairs[BLOCK_DEVICE]}
-  umount -q $tgt
-  wipefs -af $tgt
-  [[ "${setopt_pairs[PARTITION_ALIGNMENT]}" == 'default' ]] && flags=(-I) ||
-    flags=(-a ${setopt_pairs[PARTITION_ALIGNMENT]%B} -I)
-  sgdisk ${flags[@]} -n 1:0:+${setopt_pairs[ESP_SIZE]%iB} -t 1:EF00 $tgt
-  sgdisk ${flags[@]} -n 2:0:0 -t 2:8304 $tgt
-  partprobe $tgt
-  mkfs.fat -F 32 "${tgt}p1"
-  flags=(-b ${setopt_pairs[PARTITION_ALIGNMENT]%B} -m 1 -T huge -O casefold)
-  mkfs.ext4 ${flags[@]} "${tgt}p2"
+  opt=setopt_pairs
+  flags=(-v -t ext4)
+  umount -q ${opt[BLOCK_DEVICE]}
+  wipefs -af ${opt[BLOCK_DEVICE]}
+  sgdisk -I -n 1:0:+${opt[ESP_SIZE]%iB} -t 1:EF00 ${opt[BLOCK_DEVICE]}
+  sgdisk -I -n 2:0:0 -t 2:8304 ${opt[BLOCK_DEVICE]}
+  partprobe ${opt[BLOCK_DEVICE]}
+  mkfs.fat -F 32 "${opt[BLOCK_DEVICE]}p1"
+  [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] ||
+    flags+=(-b ${opt[EXT4_BLOCK_SIZE]%B})
+  [[ "${opt[EXT4_TUNING]}" =~ reduce ]] && flags+=(-m 1)
+  [[ "${opt[EXT4_TUNING]}" =~ increase ]] && flags+=(-T huge)
+  flags+=(-O casefold)
+  [[ "${opt[EXT4_TUNING]}" =~ fast ]] && flags[-1]+=',fast_commit'
+  mke2fs ${flags[@]} "${opt[BLOCK_DEVICE]}p2"
+  [[ "${opt[MOUNT_OPTIONS]}" == 'unset' ]] ||
+    tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" "${opt[BLOCK_DEVICE]}p2"
 }
 
 install_config() {
@@ -800,7 +804,7 @@ install_config() {
   for key in {ROOTPASS,USERNAME,USERPASS,HOSTNAME};{
     [[ -z "${setopt_pairs[$key]}" ]] && { exit_prompt 'config'; return;}
   }
-  format_disk >&$log_fd
+  format_disk >&$log_fd 2>&1
   exec {log_fd}>&-
   exit 0
 }

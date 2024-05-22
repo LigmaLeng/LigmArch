@@ -11,15 +11,26 @@ value = en_AU.UTF-8
 [BLOCK_DEVICE]
 value = unset
 
-[PARTITION_ALIGNMENT]
+[ESP_SIZE]
+value = 1GiB
+
+[EXT4_BLOCK_SIZE]
 option =
         default
-        512B
+        1024B
         2048B
         4096B
 
-[ESP_SIZE]
-value = 1GiB
+[EXT4_TUNING]
+list =
+      reduce-reserved-blocks
+      increase-bytes-per-inode
+      fast-commit-feature
+
+[MOUNT_OPTIONS]
+list =
+      noatime
+      commit=60
 
 [KERNEL]
 option =
@@ -71,5 +82,3 @@ list =
 list =
       multilib
       zram-swap
-      Tuned-Ext4
-
