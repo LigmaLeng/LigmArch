@@ -30,6 +30,7 @@ list =
 [MOUNT_OPTIONS]
 list =
       noatime
+      data=ordered
       commit=60
 
 [KERNEL]
@@ -62,21 +63,71 @@ option =
         NOUVEAU (open-source)
         INTEL (open-source)
 
-[PACKAGES]
+[PACKAGES_SYSTEM]
 list =
       base-devel
-      cmake
-      curl
-      dialog
       dosfstools
       e2fsprogs
+      linux-firmware
+      wayland
+      xdg-user-dirs
+
+[PACKAGES_TERMINAL]
+list =
+      bash-completion
+      bat
+      bat-extras
+        clang
+        prettier
+        python-black
+        shfmt
+      dialog
+      neovim
+      prettyping
+      terminus-font
+
+[PACKAGES_NETWORKING]
+list =
+      networkmanager
+      firewalld
+      openssh
+
+[PACKAGES_DEVELOPMENT]
+list =
+      cmake
+      cuda (NVIDIA)
+        gdb
+        glu
+        nvidia-utils
+        rdma-core
+      gdb
       git
+
+[PACKAGES_UTILS]
+list =
+      curl
+      fzf
+      pandoc-cli
+      polkit
+      ripgrep
+      ripgrep-all
+      w3m
+
+[PACKAGES_RTFM]
+list =
+      arch-wiki-docs
       man-db
       man-pages
-      networkmanager
-      neovim
-      openssh
-      xdg-user-dirs
+      wikiman
+
+[PACKAGES_MEDIA]
+list =
+      ffmpeg
+      ffmpegthumbnailer
+      imagemagick
+      libjpeg-turbo
+      mediainfo
+      mpv
 
 [EXTRAS]
 list =

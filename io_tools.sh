@@ -5,9 +5,6 @@
 # TODO: add microcode detection
 # TODO: pacman parallel downloads
 # TODO: makepkg optimisations
-# TODO: /sys/block/nvme0n1/queue/discard_max_hw_bytes
-# TODO: /sys/block/nvme0n1/queue/scheduler
-#
 # TODO: create /etc/modules-load.d/zram.conf
 # zram
 #
@@ -31,7 +28,7 @@
 #       keyboard sd-vconsole block lvm2 filesystems fsck)
 #       
 # TODO: add kernel parameters
-# mem_sleep_default=deep
+# iommu=pt
 # nvidia_drm.modeset=1
 # nvidia_drm.fbdev=1
 #
@@ -343,7 +340,8 @@ options_init() {
   # Format spacing for printing setup options
   for((i=-1;++i<${#SETOPT_KEYS[@]};)){
     key="${SETOPT_KEYS[$i]}"
-    SETOPT_KEYS_F+=("${key//_/ }$(echoes '\x20' $((lim-${#key}+3)))")
+    [[ $key == PACKAGES* ]] && : "${key##*_}" || : "${key//_/ }"
+    SETOPT_KEYS_F+=("${_}$(echoes '\x20' $((lim-${#_}+3)))")
     setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
     [[ $key =~ ^(.*NAME|.*PASS)$ ]] && setopt_pairs[$key]=''
   }

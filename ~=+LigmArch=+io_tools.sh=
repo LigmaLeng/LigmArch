@@ -131,46 +131,46 @@ setlocal nowinfixwidth
 setlocal nowrap
 setlocal wrapmargin=0
 silent! normal! zE
-1,43fold
-44,54fold
-55,63fold
-64,65fold
-66,72fold
-73,83fold
-84,96fold
-97,101fold
-102,112fold
-113,121fold
-122,147fold
-148,204fold
-205,236fold
-237,276fold
-277,306fold
-313,342fold
-344,349fold
-352,367fold
-373,376fold
-378,383fold
-307,395fold
-396,410fold
-411,428fold
-429,434fold
-435,475fold
-476,559fold
-560,654fold
-655,732fold
-733,748fold
-749,774fold
-775,796fold
-797,811fold
-812,821fold
+1,40fold
+41,51fold
+52,60fold
+61,62fold
+63,69fold
+70,80fold
+81,93fold
+94,98fold
+99,109fold
+110,118fold
+119,144fold
+145,201fold
+202,233fold
+234,273fold
+274,303fold
+310,339fold
+341,347fold
+350,365fold
+371,374fold
+376,381fold
+304,393fold
+394,408fold
+409,426fold
+427,432fold
+433,473fold
+474,557fold
+558,652fold
+653,730fold
+731,746fold
+747,772fold
+773,794fold
+795,809fold
+810,819fold
 let &fdl = &fdl
-let s:l = 1 - ((0 * winheight(0) + 21) / 43)
+let s:l = 31 - ((30 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 1
-normal! 0
+keepjumps 31
+normal! 01|
 let &g:so = s:so_save | let &g:siso = s:siso_save
 nohlsearch
 doautoall SessionLoadPost
