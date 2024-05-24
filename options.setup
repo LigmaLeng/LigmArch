@@ -100,6 +100,7 @@ list =
         glu
         nvidia-utils
         rdma-core
+      gcc
       gdb
       git
 
@@ -122,12 +123,15 @@ list =
 
 [PACKAGES_MEDIA]
 list =
+      bluez
+      bluez-utils
       ffmpeg
       ffmpegthumbnailer
       imagemagick
       libjpeg-turbo
       mediainfo
       mpv
+      pipewire
 
 [EXTRAS]
 list =

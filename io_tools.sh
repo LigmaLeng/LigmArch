@@ -37,6 +37,19 @@
 # NVreg_EnableStreamMemOPs=1
 # NVreg_EnablePCIeGen3=1
 # NVreg_EnableMSI=1
+#
+# TODO: target systemctl
+# systemctl enable ... --root=/mnt
+# TODO: read cpu info for microcode
+# tgt=vendor_id /proc/cpuinfo
+# TODO: rsync for boot backup hook on system upgrade
+# TODO: /mnt/etc/hosts
+# 127.0.0.1 localhost
+# ::1 localhost
+# 127.0.1.1 $HOSTNAME.localdomain $HOSTNAME
+# TODO: incase i need to run sudo for user
+# echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel_sudo
+# echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/wheel_sudo
 
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
