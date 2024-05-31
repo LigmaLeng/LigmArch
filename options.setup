@@ -14,6 +14,9 @@ value = unset
 [ESP_SIZE]
 value = 1GiB
 
+[ROOT_VOLUME_SIZE]
+value = 50GiB
+
 [EXT4_BLOCK_SIZE]
 option =
         default
@@ -21,17 +24,12 @@ option =
         2048B
         4096B
 
-[EXT4_TUNING]
-list =
-      reduce-reserved-blocks
-      increase-bytes-per-inode
-      fast-commit-feature
-
-[MOUNT_OPTIONS]
+[FILESYSTEM_OPTIONS]
 list =
       noatime
       data=ordered
       commit=60
+      fast-commit
 
 [KERNEL]
 option =
@@ -60,10 +58,16 @@ option =
         AMDATI (open-source)
         NVIDIA (proprietary)
         NVIDIA (open-source)
-        NOUVEAU (open-source)
+        NVIDIA (open-source+cudaSDK)
         INTEL (open-source)
 
-[PACKAGES_SYSTEM]
+[EXTRAS]
+list =
+      multilib
+      zram-swap
+
+[PACKAGES]
+[.SYSTEM]
 list =
       base-devel
       dosfstools
@@ -72,39 +76,28 @@ list =
       wayland
       xdg-user-dirs
 
-[PACKAGES_TERMINAL]
+[.TERMINAL]
 list =
       bash-completion
       bat
-      bat-extras
-        clang
-        prettier
-        python-black
-        shfmt
       dialog
       neovim
-      prettyping
       terminus-font
 
-[PACKAGES_NETWORKING]
+[.NETWORKING]
 list =
       networkmanager
       firewalld
       openssh
 
-[PACKAGES_DEVELOPMENT]
+[.DEVELOPMENT]
 list =
       cmake
-      cuda (NVIDIA)
-        gdb
-        glu
-        nvidia-utils
-        rdma-core
       gcc
       gdb
       git
 
-[PACKAGES_UTILS]
+[.UTILS]
 list =
       curl
       fzf
@@ -114,14 +107,14 @@ list =
       ripgrep-all
       w3m
 
-[PACKAGES_RTFM]
+[.RTFM]
 list =
       arch-wiki-docs
       man-db
       man-pages
       wikiman
 
-[PACKAGES_MEDIA]
+[.MEDIA]
 list =
       bluez
       bluez-utils
@@ -132,8 +125,3 @@ list =
       mediainfo
       mpv
       pipewire
-
-[EXTRAS]
-list =
-      multilib
-      zram-swap

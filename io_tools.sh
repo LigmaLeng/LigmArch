@@ -50,11 +50,17 @@
 # TODO: incase i need to run sudo for user
 # echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel_sudo
 # echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/wheel_sudo
+#      cuda (NVIDIA)
+#        gdb
+#        glu
+#        nvidia-utils
+#        rdma-core
+# 
 
 [[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
 TEMPLATE_PATH="${CTX_DIR}/options.setup"
-READ_OPTS=(-rs -t 0.02)
+READ_OPTS=(-rs -t 0.03)
 readonly CTX_DIR CACHE_DIR TEMPLATE_PATH READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F setopt_pairs_f win_ctx_a
@@ -253,13 +259,6 @@ win_ctx_op() {
       read -d '' w[attr] w[nref] w[pg_type] <<< "${2//;/ }"
       ((w[offset]=0,w[idx]=0,w[idxs]=-1))
     ;;
-    'nav')
-      case ${w[pg_type]} in
-        'single') nav_single;;
-        'multi') nav_multi;;
-      esac
-      return $?
-    ;;
     'push')
       [[ ${w[pg_type]} == 'prompt' ]] && w[nref]="__${w[nref]}"
       : "${w[attr]};${w[nref]};${w[pg_type]};${w[offset]};${w[idx]};${w[idxs]}"
@@ -327,6 +326,8 @@ options_init() {
       '['*)
         : "${REPLY#[}"
         key="${_%]}"
+        [[ ${key::1} == '.' ]] && {
+          key="${SETOPT_KEYS[-1]}_${key:1}"; continue;}
         SETOPT_KEYS+=("$key")
         # Keep track of longest optkey for page formatting purposes
         ((lim=${#key}>lim?${#key}:$lim))
@@ -342,18 +343,22 @@ options_init() {
           ref+=("${REPLY#"${REPLY%%[![:space:]]*}"}")
           setopt_pairs[$key]+="  ${ref[-1]}"
         done
-        [[ $key =~ ^(PACKAGES|EXTRAS|MOUNT|EXT4_TUNING) ]] && {
+        [[ $key =~ ^(PACKAGES|EXTRAS|FILESYSTEM*) ]] && {
           : "${setopt_pairs[$key]#  }"  
         } || : "${ref[0]}"
         setopt_pairs[$key]="$_"
         [[ $key == 'MIRRORS' ]] && ref=()
+        [[ $key == PACKAGES* ]] && {
+          [[ -v PACKAGES ]] || declare -ga PACKAGES
+          PACKAGES+=("${key##PACKAGES_}")
+        }
       ;;
     esac
   done < "$TEMPLATE_PATH"
   # Format spacing for printing setup options
   for((i=-1;++i<${#SETOPT_KEYS[@]};)){
     key="${SETOPT_KEYS[$i]}"
-    [[ $key == PACKAGES* ]] && : "${key##*_}" || : "${key//_/ }"
+    : "${key//_/ }"
     SETOPT_KEYS_F+=("${_}$(echoes '\x20' $((lim-${#_}+3)))")
     setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
     [[ $key =~ ^(.*NAME|.*PASS)$ ]] && setopt_pairs[$key]=''
@@ -393,15 +398,13 @@ options_init() {
     BLOCK_DEVICE+=("/dev/${key##*/} "$'\xF7'" ${i:: -1}.${i: -1}Gib")
   }
   for key in ${SETOPT_KEYS};{
-    [[ $key =~ (SIZE|PASS|NAME)$ ]] && continue
-    readonly $key
-  }
+    [[ $key =~ (SIZE|PASS|NAME)$ ]] || readonly $key;}
   # Append option keys relevant to config based actions
   for key in {SAVE_CONFIG,LOAD_CONFIG,INSTALL};{
     SETOPT_KEYS+=("$key")
     setopt_pairs_f+=("[${key/_/ }]")
   }
-  readonly SETOPT_KEYS SETOPT_KEYS_F
+  readonly SETOPT_KEYS SETOPT_KEYS_F ${PACKAGES[@]}
 }
 
 draw_window() {
@@ -440,20 +443,23 @@ get_key() {
 seq_main() {
   win_ctx_op 'set' "1,1,${LINES},${COLUMNS};setopt_pairs_f;single"
   draw_window
-  win_ctx_op 'nav'
+  nav_single
 }
 
 seq_select() {
   local -n w ref
   local optkey i
-  optkey=${SETOPT_KEYS[$1]}; ref=$optkey; w=win_ctx
+  w=win_ctx
+  [[ ${w[nref]} == PACKAGES ]] && : "PACKAGES_${PACKAGES[$1]}" ||
+    : "${SETOPT_KEYS[$1]}"
+  optkey=$_; ref=$optkey
   win_ctx_op 'push'
   # Refer to corresponding arrays and attributes belonging to option key
   : "2,${SAGITTAL},$((${#ref[@]}<LINES-4?${#ref[@]}+2:LINES-2)),$((SAGITTAL-1))"
-  [[ $optkey =~ ^(MIRRORS|PACKAGES|EXTRAS|MOUNT|EXT4_TUNING) ]] && {
+  [[ $optkey =~ ^(MIRRORS|PACKAGES_|EXTRAS|FILESYSTEM*) ]] && {
     : "$_;${optkey};multi";} || : "$_;${optkey};single"
   win_ctx_op 'set' "$_"
-  # If option supports multiple values, convert string values to indices
+  # If option accepts multiple values, convert string values to indices
   [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
     for((i=-1;++i<${#ref[@]};)){
       [[ "${setopt_pairs[$optkey]}" =~ ${ref[$i]} ]] && w[idxs]+=",$i"
@@ -461,26 +467,24 @@ seq_select() {
     w[idxs]="${w[idxs]#-1,}"
   }
   draw_window
-  win_ctx_op 'nav'
-  ((!$?)) && {
-    [[ ${w[pg_type]} == 'multi' ]] && {
-      # If option supports multiple values, convert indices to string values
-      [[ ${w[idxs]} == '-1' ]] && setopt_pairs[$optkey]='unset' || {
-        setopt_pairs[$optkey]=''
-        while read; do
-          setopt_pairs[$optkey]+="  ${ref[$REPLY]}"
-        done < <(sort -n <<< "${w[idxs]//,/$'\n'}")
-        setopt_pairs[$optkey]="${setopt_pairs[$optkey]#  }"
-      }
-    } || {
-      # If selecting for LOCALE strip trailing string referring to the locales
-      # corresponding character mapping as well as any remaining whitespace
-      [[ $optkey == 'LOCALE' || $optkey == 'BLOCK_DEVICE' ]] && {
-        : "${ref[${w[idx]}]}"; setopt_pairs[$optkey]=${_%% *}
-      } || setopt_pairs[$optkey]=${ref[${w[idx]}]}
+  nav_${w[pg_type]} && { win_ctx_op 'pop'; return;}
+  [[ ${w[pg_type]} == multi ]] && {
+    # If option supports multiple values, convert indices to string values
+    [[ "${w[idxs]}" == '-1' ]] && setopt_pairs[$optkey]='unset' || {
+      setopt_pairs[$optkey]=''
+      while read; do
+        setopt_pairs[$optkey]+="  ${ref[$REPLY]}"
+      done < <(sort -n <<< "${w[idxs]//,/$'\n'}")
+      setopt_pairs[$optkey]="${setopt_pairs[$optkey]#  }"
     }
-    setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
+    [[ $optkey == PACKAGES* ]] && { win_ctx_op 'pop'; return;}
   }
+  [[ ${w[pg_type]} == single ]] && {
+    : "${ref[${w[idx]}]}"
+    [[ $optkey =~ ^(LOCALE|BLOCK_DEVICE) ]] && : "${_%% *}"
+    setopt_pairs[$optkey]="$_"
+  }
+  setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
   win_ctx_op 'pop'
 }
 
@@ -505,10 +509,10 @@ seq_ttin() {
             [[ "$str" =~ .*[$].*.$ ]] && {
               prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
           ;;&
-          ESP*)
-            ! [[ "$str" =~ ^([1-9][0-9]*)(G|M)(iB)?$ ]] && {
-              prompt 'err' "VALID SPECIFIERS: [:digit:]G(iB)/M(iB)"; continue;}
-            str="${BASH_REMATCH[1]}${BASH_REMATCH[2]}iB"
+          ESP*|ROOT_VOL*)
+            ! [[ "$str" =~ ^([1-9][0-9]*)G(iB)?$ ]] && {
+              prompt 'err' "VALID SPECIFIERS: [:digit:]G(iB)"; continue;}
+            str="${BASH_REMATCH[1]}GiB"
           ;;&
           *PASS)
             [[ -z "$strcomp" ]] && {
@@ -570,35 +574,41 @@ seq_ttin() {
 
 nav_single() {
   local -n ref idx offs
-  local key len lim slim
+  local key len y x lim n slim
   ref=${win_ctx[nref]}; idx=win_ctx[idx]; offs=win_ctx[offset]; len=${#ref[@]}
-  read -d '' _ _ lim _ <<< "${win_ctx[attr]//,/ }"
+  read -d '' y x lim n <<< "${win_ctx[attr]//,/ }"
   ((lim-=2)); ((slim=lim>>1))
   print_pg
   for((;;)){
     get_key key
     case $key in
       q|$'\x1B') # ESC
-        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && exit_prompt || return 1
+        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && exit_prompt || return 0
       ;;
       $'\x0A') # ENTER
-        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
-          : "${ref[$idx]}"
-          ((${#_}>COLUMNS-8)) && {
-            : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
-          printf '  \x9B7m%s\x1B8' "$_"
-          case ${SETOPT_KEYS[$idx]} in
-            ESP*|*NAME|*PASS) seq_ttin $idx;;
-            SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
-            LOAD*)
-              load_config
-              (($?)) && : 'NO SAVEFILE' || : 'SAVE LOADED'
-              printf '\xAF \x9B7m[%s]\x1B8' "$_"
-            ;;
-            INSTALL) install_config;;
-            *) seq_select $idx;;
-          esac
-        } || return 0
+        [[ ${win_ctx[nref]} == 'PACKAGES' ]] && {
+          local white_sp=$(echoes '\x20' $n)
+          printf '\x9B%s;%sH' $y $x
+          for((i=0;i++<lim+2;)){ printf '\x1B7%s\x1B8\x9BB' "${white_sp}";}
+          seq_select $idx
+          continue
+        }
+        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] || return 1
+        : "${ref[$idx]}"
+        ((${#_}>COLUMNS-8)) && {
+          : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
+        printf '  \x9B7m%s\x1B8' "$_"
+        case ${SETOPT_KEYS[$idx]} in
+          ESP*|ROOT*|*NAME|*PASS) seq_ttin $idx;;
+          SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
+          LOAD*)
+            load_config
+            (($?)) && : 'NO SAVEFILE' || : 'SAVE LOADED'
+            printf '\xAF \x9B7m[%s]\x1B8' "$_"
+          ;;
+          INSTALL) install_config;;
+          *) seq_select $idx;;
+        esac
       ;;
       k|$'\x9BA') # UP
         # Ignore 0th index
@@ -673,8 +683,8 @@ nav_multi() {
   for((;;)){
     get_key key
     case $key in
-      $'\x1B') return 1;; # ESC
-      $'\x0A') return 0;; # ENTER
+      $'\x1B') return 0;; # ESC
+      $'\x0A') return 1;; # ENTER
       k|$'\x9BA') # UP
         # Ignore 0th index
         ((!idx)) && continue
@@ -745,26 +755,33 @@ save_config() {
   local key white_sp
   exec {save_fd}>"${CACHE_DIR}/options.conf"
   for key in ${SETOPT_KEYS[@]};{
-    [[ $key =~ ^(.*PASS|.*CONFIG|INSTALL)$ || -z "${setopt_pairs[$key]}" ]] &&
+    [[ $key =~ ^(PACKAGES|.*PASS|.*CONFIG|INSTALL)$ || -z "${setopt_pairs[$key]}" ]] &&
       continue
     printf '%s\n' "[$key]" >&$save_fd
-    [[ $key =~ ^(MIRRORS|PACKAGES|EXTRAS|MOUNT|EXT4_TUNING) ]] && {
+    [[ $key =~ ^(MIRRORS|EXTRAS|FILESYSTEM*) ]] && {
       printf 'list =\n      ' >&$save_fd
       : "${setopt_pairs[$key]//  /$'\n',}"
       printf '%s\n\n' "${_//,/      }" >&$save_fd
     } || printf 'value = %s\n\n' "${setopt_pairs[$key]}" >&$save_fd
+  }
+  printf '[PACKAGES]\n' >&$save_fd
+  for key in ${PACKAGES[@]};{
+    printf '%s\nlist =\n      ' "[.$key]" >&$save_fd
+    : "${setopt_pairs["PACKAGES_$key"]//  /$'\n',}"
+    printf '%s\n\n' "${_//,/      }" >&$save_fd
   }
   exec {save_fd}>&-
 }
 
 load_config() {
   local key i
-  ! [[ -a "${CACHE_DIR}/options.conf" ]] && return 1
+  [[ -a "${CACHE_DIR}/options.conf" ]] || return 1
   while read; do
     case $REPLY in
       '['*) : "${REPLY#[}"; key="${_%]}";;
       value*) setopt_pairs[$key]=${REPLY#*= };;
       list*)
+        key=${key/#./PACKAGES_}
         setopt_pairs[$key]=''
         while read; do
           [[ -z $REPLY ]] && break ||
@@ -776,6 +793,7 @@ load_config() {
   done < "${CACHE_DIR}/options.conf"
   for((i=-1;++i<${#SETOPT_KEYS_F[@]};)){
     key="${SETOPT_KEYS[$i]}"
+    [[ $key == PACK* ]] && continue
     [[ $key == *PASS ]] && { setopt_pairs[$key]=''; : 'unset';} ||
       : "${setopt_pairs[$key]}"
     setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}$_"
@@ -815,6 +833,13 @@ install_config() {
   for key in {ROOTPASS,USERNAME,USERPASS,HOSTNAME};{
     [[ -z "${setopt_pairs[$key]}" ]] && { exit_prompt 'config'; return;}
   }
+  for key in ${BLOCK_DEVICE[@]};{
+    [[ "${setopt_pairs[BLOCK_DEVICE]}" == "$key"* ]] || continue
+    : "${setopt_pairs[BLOCK_DEVICE]##* }"; : "${_%.*}"
+    ((${_}<${setopt_pairs[$BLOCK_DEVICE]%GiB})) &&
+      exit_prompt 'config'; return
+  }
+
   format_disk >&$log_fd 2>&1
   exec {log_fd}>&-
   exit 0
