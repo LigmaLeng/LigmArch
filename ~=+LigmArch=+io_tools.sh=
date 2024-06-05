@@ -27,7 +27,7 @@ setlocal nocopyindent
 setlocal cryptmethod=
 setlocal nocursorbind
 setlocal nocursorcolumn
-setlocal cursorline
+setlocal nocursorline
 setlocal cursorlineopt=both
 setlocal define=
 setlocal dictionary=
@@ -131,40 +131,56 @@ setlocal nowinfixwidth
 setlocal nowrap
 setlocal wrapmargin=0
 silent! normal! zE
-1,59fold
-60,70fold
-71,79fold
-80,81fold
-82,88fold
-89,99fold
-100,112fold
-113,117fold
-118,128fold
-129,137fold
-138,163fold
-164,220fold
-221,252fold
-253,285fold
-286,315fold
-316,316fold
-316,424fold
-425,442fold
-443,448fold
-449,490fold
-491,574fold
-575,675fold
-676,753fold
-754,775fold
-776,803fold
-804,825fold
-826,847fold
-848,857fold
+1,41fold
+42,52fold
+53,61fold
+62,63fold
+64,70fold
+71,81fold
+82,94fold
+95,99fold
+100,110fold
+111,119fold
+120,145fold
+146,202fold
+203,234fold
+235,267fold
+268,297fold
+298,298fold
+298,406fold
+407,424fold
+425,430fold
+431,472fold
+473,556fold
+557,657fold
+658,735fold
+736,757fold
+758,785fold
+786,823fold
+824,842fold
+843,857fold
+858,872fold
+873,891fold
+892,911fold
+912,915fold
+916,943fold
+944,953fold
 let &fdl = &fdl
-let s:l = 1 - ((0 * winheight(0) + 21) / 43)
+298
+normal! zo
+298
+normal! zc
+912
+normal! zo
+916
+normal! zo
+944
+normal! zo
+let s:l = 913 - ((813 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 1
+keepjumps 913
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
 nohlsearch

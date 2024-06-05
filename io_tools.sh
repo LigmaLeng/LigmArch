@@ -2,22 +2,8 @@
 #
 # TODO: Write file header
 #
-# TODO: add microcode detection
 # TODO: pacman parallel downloads
 # TODO: makepkg optimisations
-# TODO: create /etc/modules-load.d/zram.conf
-# zram
-#
-# TODO: create /etc/udev/rules.d/99-zram.rules
-# ACTION=="add", KERNEL=="zram0", ATTR{comp_algorithm}="zstd",
-# ATTR{disksize}="TODO", RUN="/usr/bin/mkswap -U clear /dev/%k", TAG+="systemd"
-#
-# TODO: add to /etc/fstab
-# /dev/zram0 none swap defaults,pri=100 0 0
-#
-# TODO: disable zswap
-# add zswap.enabled=0 to kernel params
-#
 # TODO: create /etc/systemd/sleep.conf.d/disable-sleep.conf
 # [Sleep]
 # AllowSuspend=no
@@ -43,10 +29,6 @@
 # TODO: read cpu info for microcode
 # tgt=vendor_id /proc/cpuinfo
 # TODO: rsync for boot backup hook on system upgrade
-# TODO: /mnt/etc/hosts
-# 127.0.0.1 localhost
-# ::1 localhost
-# 127.0.1.1 $HOSTNAME.localdomain $HOSTNAME
 # TODO: incase i need to run sudo for user
 # echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel_sudo
 # echo '%wheel ALL=(ALL:ALL) ALL' > /etc/sudoers.d/wheel_sudo
@@ -100,7 +82,7 @@ set_console() {
 cleanup() {
   # m     Reset Colours 
   # ?25h  Show cursor
-  # ?7h   Disable line wrapping
+  # ?7h   Enable line wrapping
   # 2J    Clear screen
   # r     Reset scrolling region
   printf '\x9B%s' m ?25h ?7h 2J r
@@ -343,7 +325,7 @@ options_init() {
           ref+=("${REPLY#"${REPLY%%[![:space:]]*}"}")
           setopt_pairs[$key]+="  ${ref[-1]}"
         done
-        [[ $key =~ ^(PACKAGES|EXTRAS|FILESYSTEM*) ]] && {
+        [[ $key =~ ^(PACKAGES|MOUNT*) ]] && {
           : "${setopt_pairs[$key]#  }"  
         } || : "${ref[0]}"
         setopt_pairs[$key]="$_"
@@ -456,7 +438,7 @@ seq_select() {
   win_ctx_op 'push'
   # Refer to corresponding arrays and attributes belonging to option key
   : "2,${SAGITTAL},$((${#ref[@]}<LINES-4?${#ref[@]}+2:LINES-2)),$((SAGITTAL-1))"
-  [[ $optkey =~ ^(MIRRORS|PACKAGES_|EXTRAS|FILESYSTEM*) ]] && {
+  [[ $optkey =~ ^(MIRRORS|PACKAGES_|MOUNT*) ]] && {
     : "$_;${optkey};multi";} || : "$_;${optkey};single"
   win_ctx_op 'set' "$_"
   # If option accepts multiple values, convert string values to indices
@@ -509,7 +491,7 @@ seq_ttin() {
             [[ "$str" =~ .*[$].*.$ ]] && {
               prompt 'err' "'$' ONLY VALID AS LAST CHARACTER"; continue;}
           ;;&
-          ESP*|ROOT_VOL*)
+          ESP*|*VOLUME_SIZE)
             ! [[ "$str" =~ ^([1-9][0-9]*)G(iB)?$ ]] && {
               prompt 'err' "VALID SPECIFIERS: [:digit:]G(iB)"; continue;}
             str="${BASH_REMATCH[1]}GiB"
@@ -599,7 +581,7 @@ nav_single() {
           : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
         printf '  \x9B7m%s\x1B8' "$_"
         case ${SETOPT_KEYS[$idx]} in
-          ESP*|ROOT*|*NAME|*PASS) seq_ttin $idx;;
+          ESP*|*VOLUME_SIZE|*NAME|*PASS) seq_ttin $idx;;
           SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
           LOAD*)
             load_config
@@ -753,12 +735,12 @@ nav_multi() {
 
 save_config() {
   local key white_sp
-  exec {save_fd}>"${CACHE_DIR}/options.conf"
+  exec {save_fd}>${CACHE_DIR}/options.conf
   for key in ${SETOPT_KEYS[@]};{
     [[ $key =~ ^(PACKAGES|.*PASS|.*CONFIG|INSTALL)$ || -z "${setopt_pairs[$key]}" ]] &&
       continue
     printf '%s\n' "[$key]" >&$save_fd
-    [[ $key =~ ^(MIRRORS|EXTRAS|FILESYSTEM*) ]] && {
+    [[ $key =~ ^(MIRRORS|MOUNT*) ]] && {
       printf 'list =\n      ' >&$save_fd
       : "${setopt_pairs[$key]//  /$'\n',}"
       printf '%s\n\n' "${_//,/      }" >&$save_fd
@@ -801,46 +783,160 @@ load_config() {
   print_pg
 }
 
-format_disk() {
+setup_partitions() {
   local -n opt
   local -a flags
   opt=setopt_pairs
-  flags=(-v -t ext4)
+  flags=(-v -t ext4 -O casefold,fast_commit)
   umount -q ${opt[BLOCK_DEVICE]}
   wipefs -af ${opt[BLOCK_DEVICE]}
-  sgdisk -I -n 1:0:+${opt[ESP_SIZE]%iB} -t 1:EF00 ${opt[BLOCK_DEVICE]}
-  sgdisk -I -n 2:0:0 -t 2:8304 ${opt[BLOCK_DEVICE]}
+  sgdisk -I -n 1:0:+${opt[ESP_SIZE]%iB} -t 1:ef00 ${opt[BLOCK_DEVICE]}
+  sgdisk -I -n 2:0:0 -t 2:8e00 ${opt[BLOCK_DEVICE]}
   partprobe ${opt[BLOCK_DEVICE]}
   mkfs.fat -F 32 "${opt[BLOCK_DEVICE]}p1"
+  [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] && {
+    : "${opt[BLOCK_DEVICE]}p2"
+  } || : "--dataalignment ${opt[EXT4_BLOCK_SIZE]%B} ${opt[BLOCK_DEVICE]}p2"
+  pvcreate $_
+  vgcreate vg0 "${opt[BLOCK_DEVICE]}p2"
+  lvcreate -y -L "${opt[ROOT_VOLUME_SIZE]}%iB" vg0 -n lv0
+  lvcreate -y -L "${opt[HOME_VOLUME_SIZE]}%iB" vg0 -n lv1
+  modprobe dm_mod
+  vgscan
+  vgchange -ay
+  [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] && {
+    mke2fs ${flags[@]} /dev/vg0/lv0
+  } || mke2fs ${flags[@]} -b ${opt[EXT4_BLOCK_SIZE]%B} /dev/vg0/lv0
+  flags+=(-m 0 -T largefile)
   [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] ||
     flags+=(-b ${opt[EXT4_BLOCK_SIZE]%B})
-  [[ "${opt[EXT4_TUNING]}" =~ reduce ]] && flags+=(-m 1)
-  [[ "${opt[EXT4_TUNING]}" =~ increase ]] && flags+=(-T huge)
-  flags+=(-O casefold)
-  [[ "${opt[EXT4_TUNING]}" =~ fast ]] && flags[-1]+=',fast_commit'
-  mke2fs ${flags[@]} "${opt[BLOCK_DEVICE]}p2"
-  [[ "${opt[MOUNT_OPTIONS]}" == 'unset' ]] ||
-    tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" "${opt[BLOCK_DEVICE]}p2"
+  mke2fs ${flags[@]} /dev/vg0/lv1
+  [[ "${opt[MOUNT_OPTIONS]}" == 'unset' ]] || {
+    tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" /dev/vg0/lv0
+    tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" /dev/vg0/lv1
+  }
+  umount -a
+  mount /dev/vg0/lv0 /mnt
+  mount --mkdir /dev/${setopt_pairs[BLOCK_DEVICE]}p1 /mnt/efi
+  mount --mkdir /dev/vg0/lv1 /mnt/home
+}
+
+setup_mirrors() {
+  local i
+  pacman -S pacman-contrib --noconfirm --needed
+  [[ -a "/etc/pacman.d/mirrorlist.bak" ]] ||
+    cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
+  exec {mirror_fd}>${CACHE_DIR}/mirrors
+  while read; do
+    [[ "$REPLY" == '##'* ]] || continue
+    [[ "${setopt_pairs[MIRRORS]}" =~ "${REPLY#* }" ]] && {
+      while read; do
+        [[ -z $REPLY ]] && break
+        printf '%s\n' "${REPLY#\#}" >&$mirror_fd
+      done
+    }
+  done < "${CACHE_DIR}/mirrorlist"
+  exec {mirror_fd}>&-
+  rankmirrors ${CACHE_DIR}/mirrors > /etc/pacman.d/mirrorlist
+}
+
+edit_pacconf() {
+  local stream
+  read -d '' -r stream < /etc/pacman.conf
+  exec {stream_fd}>/etc/pacman.conf
+  while read; do
+    case $REPLY in
+      '#[multilib]') printf '[multilib]\n' >&$stream_fd; read;&
+      '#ParallelDownloads'*) : "${REPLY#\#}";;
+      *) : "$REPLY";;
+    esac
+    printf '%s\n' "$_" >&$stream_fd
+  done <<< "$stream"
+  exec {stream_fd}>&-
+}
+
+strapon() {
+  local -a pkg_base
+  pkg_base=(base base-devel dosfstools e2fsprogs lvm2 pacman-contrib)
+  edit_pacconf
+  while read; do
+    [[ $REPLY == vendor_id* ]] && {
+      [[ $REPLY =~ AMD ]] && : 'amd-ucode' || : 'intel-ucode'
+      pkg_base+=("$_")
+      break
+    } || continue
+  done < /proc/cpuinfo
+  pkg_base+=(${setopt_pairs[KERNEL]} "${setopt_pairs[KERNEL]}-headers")
+  pacstrap -KP /mnt ${pkg_base[@]}
+}
+
+setup_localisation() {
+  local stream
+  printf '%s\n' "${setopt_pairs[HOSTNAME]}" > /mnt/etc/hostname
+  read -d '' -r stream < /etc/locale.gen
+  exec {stream_fd}>/etc/locale.gen
+  while read; do
+    : "$REPLY"
+    [[ "$_" == "#${setopt_pairs[LOCALE]} "* ]] && : "${_#\#}"
+    printf '%s\n' "$_" >&$stream_fd
+  done <<< "$stream"
+  exec {stream_fd}>&-
+  printf 'LANG=%s\n' "${setopt_pairs[LOCALE]}" > /mnt/etc/locale.conf
+  printf 'KEYMAP=%s\n' "${setopt_pairs[KEYMAP]}" > /mnt/etc/vconsole.conf
+  [[ "${setopt_pairs[PACKAGES_TERMINAL]}" =~ terminus-font ]] &&
+    printf 'FONT=ter-i32b\n' >> /mnt/etc/vconsole.conf
+  printf '127.0.0.1 localhost\n::1 localhost\n' > /mnt/etc/hosts
+  printf '127.0.1.1 %s.localdomain %s\n' $HOSTNAME $HOSTNAME >> /mnt/etc/hosts
+}
+
+setup_zram() {
+  local size
+  while read; do
+    [[ "$REPLY" == MemTotal* ]] && {
+      : "${REPLY% kB}"; size=${_##* }; size=$(((size>>20)/2))
+      break
+    }
+  done /proc/meminfo
+  printf 'zram\n' > /mnt/etc/modules-load.d/zram.conf
+  printf 'ACTION=="add", KERNEL=="zram0"' > /mnt/etc/udev/rules.d/99-zram.rules
+  printf ', ATTR{comp_algorithm}="zstd"' >> /mnt/etc/udev/rules.d/99-zram.rules
+  : ", ATTR{disksize}=\"${size}Gib\", RUN=\"/usr/bin/mkswap -U clear /dev/%k\""
+  printf '%s, TAG+="systemd"' "$_" >> /mnt/etc/udev/rules.d/99-zram.rules
+  printf '/dev/zram0 none swap defaults,pri=100 0 0' >> /mnt/etc/fstab
+# TODO: disable zswap
+# add zswap.enabled=0 to kernel params
+#
+
+}
+
+install_extra_packages() {
+  
 }
 
 install_config() {
-  local key
+  local key i
+  local -n opt
+  opt=setopt_pairs
   exec {log_fd}>"${CACHE_DIR}/setup.log"
   # Check options
   for key in {MIRRORS,BLOCK_DEVICE};{
-    [[ ${setopt_pairs[$key]} == 'unset' ]] && { exit_prompt 'config'; return;}
+    [[ ${opt[$key]} == 'unset' ]] && { exit_prompt 'config'; return;}
   }
   for key in {ROOTPASS,USERNAME,USERPASS,HOSTNAME};{
-    [[ -z "${setopt_pairs[$key]}" ]] && { exit_prompt 'config'; return;}
+    [[ -z "${opt[$key]}" ]] && { exit_prompt 'config'; return;}
   }
-  for key in ${BLOCK_DEVICE[@]};{
-    [[ "${setopt_pairs[BLOCK_DEVICE]}" == "$key"* ]] || continue
-    : "${setopt_pairs[BLOCK_DEVICE]##* }"; : "${_%.*}"
-    ((${_}<${setopt_pairs[$BLOCK_DEVICE]%GiB})) &&
-      exit_prompt 'config'; return
+  for ((i=0;i<${#BLOCK_DEVICE[@]};i++)){
+    key="${BLOCK_DEVICE[$i]}"
+    [[ "$key" == "${opt[BLOCK_DEVICE]}"* ]] && {
+      ((i=${opt[ROOT_VOLUME_SIZE]%GiB})); ((i+=${opt[HOME_VOLUME_SIZE]%GiB}))
+      : "${key##* }"; : "${_%.*}"
+      (($_<i)) && { exit_prompt 'config'; return;} || break
+    }
   }
-
-  format_disk >&$log_fd 2>&1
+  #setup_partitions >&$log_fd 2>&1
+  #setup_mirrors >&$log_fd 2>&1
+  #strapon
+  #setup_localisation
   exec {log_fd}>&-
   exit 0
 }

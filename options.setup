@@ -15,7 +15,10 @@ value = unset
 value = 1GiB
 
 [ROOT_VOLUME_SIZE]
-value = 50GiB
+value = 64GiB
+
+[HOME_VOLUME_SIZE]
+value = 256GiB
 
 [EXT4_BLOCK_SIZE]
 option =
@@ -24,12 +27,11 @@ option =
         2048B
         4096B
 
-[FILESYSTEM_OPTIONS]
+[MOUNT_OPTIONS]
 list =
       noatime
       data=ordered
       commit=60
-      fast-commit
 
 [KERNEL]
 option =
@@ -61,17 +63,11 @@ option =
         NVIDIA (open-source+cudaSDK)
         INTEL (open-source)
 
-[EXTRAS]
-list =
-      multilib
-      zram-swap
-
 [PACKAGES]
 [.SYSTEM]
 list =
-      base-devel
-      dosfstools
-      e2fsprogs
+      bluez
+      bluez-utils
       linux-firmware
       wayland
       xdg-user-dirs
@@ -79,7 +75,6 @@ list =
 [.TERMINAL]
 list =
       bash-completion
-      bat
       dialog
       neovim
       terminus-font
@@ -103,7 +98,6 @@ list =
       fzf
       pandoc-cli
       polkit
-      ripgrep
       ripgrep-all
       w3m
 
@@ -116,8 +110,6 @@ list =
 
 [.MEDIA]
 list =
-      bluez
-      bluez-utils
       ffmpeg
       ffmpegthumbnailer
       imagemagick
