@@ -9,10 +9,6 @@
 # AllowSuspend=no
 # AllowHibernation=no
 #
-# TODO: modify /etc/mkinitcpio.conf
-# HOOKS=(systemd autodetect microcode modconf -kms
-#       keyboard sd-vconsole block lvm2 filesystems fsck)
-#       
 # TODO: add kernel parameters
 # iommu=pt
 # nvidia_drm.modeset=1
@@ -26,8 +22,6 @@
 #
 # TODO: target systemctl
 # systemctl enable ... --root=/mnt
-# TODO: read cpu info for microcode
-# tgt=vendor_id /proc/cpuinfo
 # TODO: rsync for boot backup hook on system upgrade
 # TODO: incase i need to run sudo for user
 # echo '%wheel ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel_sudo
@@ -873,8 +867,8 @@ strapon() {
 setup_localisation() {
   local stream
   printf '%s\n' "${setopt_pairs[HOSTNAME]}" > /mnt/etc/hostname
-  read -d '' -r stream < /etc/locale.gen
-  exec {stream_fd}>/etc/locale.gen
+  read -d '' -r stream < /mnt/etc/locale.gen
+  exec {stream_fd}>/mnt/etc/locale.gen
   while read; do
     : "$REPLY"
     [[ "$_" == "#${setopt_pairs[LOCALE]} "* ]] && : "${_#\#}"
@@ -883,10 +877,34 @@ setup_localisation() {
   exec {stream_fd}>&-
   printf 'LANG=%s\n' "${setopt_pairs[LOCALE]}" > /mnt/etc/locale.conf
   printf 'KEYMAP=%s\n' "${setopt_pairs[KEYMAP]}" > /mnt/etc/vconsole.conf
-  [[ "${setopt_pairs[PACKAGES_TERMINAL]}" =~ terminus-font ]] &&
-    printf 'FONT=ter-i32b\n' >> /mnt/etc/vconsole.conf
+  #[[ "${setopt_pairs[PACKAGES_TERMINAL]}" =~ terminus-font ]] &&
+    #printf 'FONT=ter-i32b\n' >> /mnt/etc/vconsole.conf
   printf '127.0.0.1 localhost\n::1 localhost\n' > /mnt/etc/hosts
   printf '127.0.1.1 %s.localdomain %s\n' $HOSTNAME $HOSTNAME >> /mnt/etc/hosts
+}
+
+setup_chroot() {
+  local stream
+  genfstab -U /mnt >> /mnt/etc/fstab
+  : "ln -sf /usr/share/zoneinfo/${setopt_pairs[TIMEZONE]} /etc/localtime"
+  arch-chroot /mnt /bin/bash -c "${_}; hwclock --systohc; locale-gen"
+  printf '%s\n' "${setopt_pairs[HOSTNAME]}" > /mnt/etc/hostname
+  read -d '' -r stream < /mnt/etc/mkinitcpio.conf
+  exec {stream_fd}>/mnt/etc/mkinitcpio.conf
+  while read; do
+    [[ "$REPLY" == HOOKS* ]] && {
+      : "HOOKS=(systemd autodetect microcode modconf keyboard"
+      : "$_ sd-vconsole block lvm2 filesystems fsck)"
+    }
+    printf '%s\n' "$_" >&$stream_fd
+  done <<< "$stream"
+  exec {stream_fd}>&-
+  arch-chroot /mnt mkinitcpio -p ${setopt_pairs[KERNEL]}
+  arch-chroot /mnt bootctl --esp-path=/efi
+  printf 'root:%s\n' "${setopt_pairs[ROOTPASS]}" > >(arch-chroot /mnt chpasswd)
+  arch-chroot /mnt useradd -m -g users -G wheel ${setopt_pairs[USERNAME]}
+  : "${setopt_pairs[USERNAME]}:${setopt_pairs[USERPASS]}"
+  printf '%s\n' "$_" > >(arch-chroot /mnt chpasswd)
 }
 
 setup_zram() {
@@ -896,7 +914,7 @@ setup_zram() {
       : "${REPLY% kB}"; size=${_##* }; size=$(((size>>20)/2))
       break
     }
-  done /proc/meminfo
+  done < /proc/meminfo
   printf 'zram\n' > /mnt/etc/modules-load.d/zram.conf
   printf 'ACTION=="add", KERNEL=="zram0"' > /mnt/etc/udev/rules.d/99-zram.rules
   printf ', ATTR{comp_algorithm}="zstd"' >> /mnt/etc/udev/rules.d/99-zram.rules
@@ -910,7 +928,7 @@ setup_zram() {
 }
 
 install_extra_packages() {
-  
+  :
 }
 
 install_config() {
@@ -933,10 +951,11 @@ install_config() {
       (($_<i)) && { exit_prompt 'config'; return;} || break
     }
   }
-  #setup_partitions >&$log_fd 2>&1
-  #setup_mirrors >&$log_fd 2>&1
-  #strapon
-  #setup_localisation
+  setup_partitions >&$log_fd 2>&1
+  setup_mirrors >&$log_fd 2>&1
+  strapon
+  setup_localisation
+  setup_chroot
   exec {log_fd}>&-
   exit 0
 }
