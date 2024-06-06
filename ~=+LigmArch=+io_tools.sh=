@@ -27,7 +27,7 @@ setlocal nocopyindent
 setlocal cryptmethod=
 setlocal nocursorbind
 setlocal nocursorcolumn
-setlocal nocursorline
+setlocal cursorline
 setlocal cursorlineopt=both
 setlocal define=
 setlocal dictionary=
@@ -161,28 +161,24 @@ silent! normal! zE
 837,851fold
 852,866fold
 867,885fold
-886,909fold
-910,929fold
-930,933fold
-934,962fold
-963,972fold
+886,910fold
+911,930fold
+931,934fold
+935,963fold
+964,973fold
 let &fdl = &fdl
 292
 normal! zo
 292
 normal! zc
-886
+964
 normal! zo
-934
-normal! zo
-963
-normal! zo
-let s:l = 904 - ((479 * winheight(0) + 21) / 43)
+let s:l = 953 - ((486 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 904
-normal! 036|
+keepjumps 953
+normal! 01|
 let &g:so = s:so_save | let &g:siso = s:siso_save
 doautoall SessionLoadPost
 " vim: set ft=vim :

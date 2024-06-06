@@ -784,8 +784,9 @@ setup_partitions() {
   flags=(-v -t ext4 -O casefold,fast_commit)
   umount -q ${opt[BLOCK_DEVICE]}
   wipefs -af ${opt[BLOCK_DEVICE]}
-  sgdisk -I -n 1:0:+${opt[ESP_SIZE]%iB} -t 1:ef00 ${opt[BLOCK_DEVICE]}
-  sgdisk -I -n 2:0:0 -t 2:8e00 ${opt[BLOCK_DEVICE]}
+  sgdisk -Zo ${opt[BLOCK_DEVICE]}
+  sgdisk -I -n 1:0:+${opt[ESP_SIZE]%iB} -t 1:EF00 ${opt[BLOCK_DEVICE]}
+  sgdisk -I -n 2:0:0 -t 2:8E00 ${opt[BLOCK_DEVICE]}
   partprobe ${opt[BLOCK_DEVICE]}
   mkfs.fat -F 32 "${opt[BLOCK_DEVICE]}p1"
   [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] && {
@@ -809,9 +810,8 @@ setup_partitions() {
     tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" /dev/vg0/lv0
     tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" /dev/vg0/lv1
   }
-  umount -a
   mount /dev/vg0/lv0 /mnt
-  mount --mkdir /dev/${setopt_pairs[BLOCK_DEVICE]}p1 /mnt/efi
+  mount --mkdir ${opt[BLOCK_DEVICE]}p1 /mnt/efi
   mount --mkdir /dev/vg0/lv1 /mnt/home
 }
 
@@ -892,7 +892,8 @@ setup_chroot() {
   read -d '' -r stream < /mnt/etc/mkinitcpio.conf
   exec {stream_fd}>/mnt/etc/mkinitcpio.conf
   while read; do
-    [[ "$REPLY" == HOOKS* ]] && {
+    : "$REPLY"
+    [[ "$_" == HOOKS* ]] && {
       : "HOOKS=(systemd autodetect microcode modconf keyboard"
       : "$_ sd-vconsole block lvm2 filesystems fsck)"
     }
@@ -900,7 +901,7 @@ setup_chroot() {
   done <<< "$stream"
   exec {stream_fd}>&-
   arch-chroot /mnt mkinitcpio -p ${setopt_pairs[KERNEL]}
-  arch-chroot /mnt bootctl --esp-path=/efi
+  arch-chroot /mnt bootctl --esp-path=/efi install
   printf 'root:%s\n' "${setopt_pairs[ROOTPASS]}" > >(arch-chroot /mnt chpasswd)
   arch-chroot /mnt useradd -m -g users -G wheel ${setopt_pairs[USERNAME]}
   : "${setopt_pairs[USERNAME]}:${setopt_pairs[USERPASS]}"
