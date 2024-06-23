@@ -1,119 +1,65 @@
-[KEYMAP]
-value = dvorak-programmer
+[DEFAULT]
+KEYMAP           = dvorak-programmer
+LOCALE           = en_AU.UTF-8
+BLOCK_DEVICE     = unset
+ESP_SIZE         = 1GiB
+ROOT_VOLUME_SIZE = 64GiB
+HOME_VOLUME_SIZE = 256GiB
+TIMEZONE         = Australia/Melbourne
+HOSTNAME         = unset
+USERNAME         = unset
 
-[MIRRORS]
-list =
-      unset
+[OPTION]
+KERNEL =
+         linux
+         linux-lts
 
-[LOCALE]
-value = en_AU.UTF-8
+EXT4_BLOCK_SIZE =
+                  default
+                  1024B
+                  2048B
+                  4096B
 
-[BLOCK_DEVICE]
-value = unset
+[LIST]
+MIRRORS =
+          unset
 
-[ESP_SIZE]
-value = 1GiB
-
-[ROOT_VOLUME_SIZE]
-value = 64GiB
-
-[HOME_VOLUME_SIZE]
-value = 256GiB
-
-[EXT4_BLOCK_SIZE]
-option =
-        default
-        1024B
-        2048B
-        4096B
-
-[MOUNT_OPTIONS]
-list =
-      noatime
-      data=ordered
-      commit=60
-
-[KERNEL]
-option =
-        linux
-        linux-lts
-
-[TIMEZONE]
-value = Australia/Melbourne
-
-[ROOTPASS]
-value = unset
-
-[USERNAME]
-value = unset
-
-[USERPASS]
-value = unset
-
-[HOSTNAME]
-value = unset
-
-[VIDEO_DRIVERS]
-option =
-        none
-        AMDGPU (open-source)
-        AMDATI (open-source)
-        NVIDIA (proprietary)
-        NVIDIA (open-source)
-        NVIDIA (open-source+cudaSDK)
-        INTEL (open-source)
+EXT4_ADD_FEATURES =
+                    encrypt
+                    verity
 
 [PACKAGES]
-[.SYSTEM]
-list =
-      bluez
-      bluez-utils
-      linux-firmware
-      wayland
-      xdg-user-dirs
+SYSTEM =
+         bluez
+         bluez-utils
+         linux-firmware
+         wayland
+         xdg-user-dirs
 
-[.TERMINAL]
-list =
-      bash-completion
-      dialog
-      neovim
-      terminus-font
+TERMINAL =
+           bash-completion
+           dialog
+           neovim
+           terminus-font
 
-[.NETWORKING]
-list =
-      networkmanager
-      firewalld
-      openssh
+NETWORKING =
+             networkmanager
+             firewalld
+             openssh
 
-[.DEVELOPMENT]
-list =
-      cmake
-      gcc
-      gdb
-      git
+TOOLS =
+        cmake
+        gcc
+        gdb
+        git
+        curl
+        fzf
+        pandoc-cli
+        ripgrep-all
+        w3m
 
-[.UTILS]
-list =
-      curl
-      fzf
-      pandoc-cli
-      polkit
-      ripgrep-all
-      w3m
-
-[.RTFM]
-list =
-      arch-wiki-docs
-      man-db
-      man-pages
-      wikiman
-
-[.MEDIA]
-list =
-      ffmpeg
-      ffmpegthumbnailer
-      imagemagick
-      libjpeg-turbo
-      mediainfo
-      mpv
-      pipewire
+RTFM =
+       arch-wiki-docs
+       man-db
+       man-pages
+       wikiman

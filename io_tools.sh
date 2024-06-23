@@ -296,40 +296,29 @@ options_init() {
   [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
   # Parse config template
   while read; do
-    case $REPLY in
-      # Brackets demarcate separate sections while parsing values that
-      # correspond to the resulting header string after trimming '[' & ']'
-      '['*)
-        : "${REPLY#[}"
-        key="${_%]}"
-        [[ ${key::1} == '.' ]] && {
-          key="${SETOPT_KEYS[-1]}_${key:1}"; continue;}
-        SETOPT_KEYS+=("$key")
-        # Keep track of longest optkey for page formatting purposes
-        ((lim=${#key}>lim?${#key}:$lim))
-      ;;
-      value*)
-        setopt_pairs[$key]=${REPLY#*= }
-      ;;
-      list*|option*)
-        declare -ga $key
-        local -n ref=$key
-        while read; do
-          [[ -z $REPLY ]] && break
-          ref+=("${REPLY#"${REPLY%%[![:space:]]*}"}")
-          setopt_pairs[$key]+="  ${ref[-1]}"
-        done
-        [[ $key =~ ^(PACKAGES|MOUNT*) ]] && {
-          : "${setopt_pairs[$key]#  }"  
-        } || : "${ref[0]}"
-        setopt_pairs[$key]="$_"
-        [[ $key == 'MIRRORS' ]] && ref=()
-        [[ $key == PACKAGES* ]] && {
-          [[ -v PACKAGES ]] || declare -ga PACKAGES
-          PACKAGES+=("${key##PACKAGES_}")
-        }
-      ;;
-    esac
+    : "$REPLY"
+    [[ "$_" == '['* ]] && { : "${_#[}"; i="${_%]}"; continue;}
+    [[ -z "$_" ]] && continue || key="${REPLY%%[[:space:]]*}"
+    [[ $i == DEFAULT ]] && setopt_pairs[$key]=${REPLY#*=[[:space:]]} || {
+      [[ $i == PACKAGES ]] && key="PACKAGES_$i"
+      declare -ga $key
+      local -n ref=$key
+      while read; do
+        [[ -z "$REPLY" ]] && break
+        ref+=("${REPLY#"${REPLY%%[![:space:]]*}"}")
+        setopt_pairs[$key]+="  ${ref[-1]}"
+      done
+      [[ $i == OPTION ]] && : "${ref[0]}" || : "${setopt_pairs[$key]#  }"
+      setopt_pairs[$key]="$_"
+      [[ $key == MIRRORS ]] && ref=()
+      [[ $key == PACKAGES* ]] && {
+        [[ -v PACKAGES ]] || declare -ga PACKAGES
+        PACKAGES+=("${key##PACKAGES_}")
+      }
+    }
+    SETOPT_KEYS+=("$key")
+    # Keep track of longest optkey for page formatting purposes
+    ((lim=${#key}>lim?${#key}:$lim))
   done < "$TEMPLATE_PATH"
   # Format spacing for printing setup options
   for((i=-1;++i<${#SETOPT_KEYS[@]};)){
