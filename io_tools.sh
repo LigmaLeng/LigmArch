@@ -216,7 +216,6 @@ prompt() {
     'update')
       printf '%s\x1B8\x9BB' "$white_sp" "$white_sp"
       : "${SETOPT_KEYS[${win_ctx[offset]}]}"
-      [[ $_ =~ PASS$ ]] && { printf '\x9B7m \x1B8'; return;}
       str="${win_ctx[nref]}"
       ((i=${win_ctx[idx]}))
       printf '%s\x9B7m' "${str::${idx}}"
@@ -299,8 +298,11 @@ options_init() {
     : "$REPLY"
     [[ "$_" == '['* ]] && { : "${_#[}"; i="${_%]}"; continue;}
     [[ -z "$_" ]] && continue || key="${REPLY%%[[:space:]]*}"
-    [[ $i == DEFAULT ]] && setopt_pairs[$key]=${REPLY#*=[[:space:]]} || {
-      [[ $i == PACKAGES ]] && key="PACKAGES_$i"
+    [[ $i == DEFAULT ]] && {
+      SETOPT_KEYS+=("$key")
+      setopt_pairs[$key]=${REPLY#*=[[:space:]]} 
+    } || {
+      [[ $i == PACKAGES ]] && key="PACKAGES_$key" || SETOPT_KEYS+=("$key")
       declare -ga $key
       local -n ref=$key
       while read; do
@@ -311,12 +313,12 @@ options_init() {
       [[ $i == OPTION ]] && : "${ref[0]}" || : "${setopt_pairs[$key]#  }"
       setopt_pairs[$key]="$_"
       [[ $key == MIRRORS ]] && ref=()
-      [[ $key == PACKAGES* ]] && {
-        [[ -v PACKAGES ]] || declare -ga PACKAGES
-        PACKAGES+=("${key##PACKAGES_}")
+      [[ $i == PACKAGES ]] && {
+        [[ -v PACKAGES ]] || { declare -ga PACKAGES; SETOPT_KEYS+=($i);}
+        PACKAGES+=(${key#PACKAGES_})
+        continue
       }
     }
-    SETOPT_KEYS+=("$key")
     # Keep track of longest optkey for page formatting purposes
     ((lim=${#key}>lim?${#key}:$lim))
   done < "$TEMPLATE_PATH"
@@ -326,7 +328,7 @@ options_init() {
     : "${key//_/ }"
     SETOPT_KEYS_F+=("${_}$(echoes '\x20' $((lim-${#_}+3)))")
     setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
-    [[ $key =~ ^(.*NAME|.*PASS)$ ]] && setopt_pairs[$key]=''
+    [[ $key == *NAME ]] && setopt_pairs[$key]=''
   }
   # Retrieve currently active mirrors from cache if available
   # Else retrieve current mirrorlist from official mirrorlist generator page
@@ -346,9 +348,8 @@ options_init() {
     done
     exec {mirror_fd}>&-
   }
-  # Get kbd keymap files
+  # Get localisation files
   KEYMAP=($(localectl list-keymaps))
-  # Get zoneinfo files
   TIMEZONE=($(timedatectl list-timezones))
   # Parse supported locales and format spacing for printing
   ((lim=SAGITTAL-4))
@@ -357,15 +358,14 @@ options_init() {
   done < "/usr/share/i18n/SUPPORTED"
   # Retrieve block devices from sysfs
   for key in /sys/block/*;{
-    [[ $key =~ (sd|hd|nvme) ]] || continue
+    [[ $key =~ (sd|hd|nvme|mmcblk) ]] || continue
     i=$(<"$key/size")
     ((i=i*5120>>30))
     BLOCK_DEVICE+=("/dev/${key##*/} "$'\xF7'" ${i:: -1}.${i: -1}Gib")
   }
-  for key in ${SETOPT_KEYS};{
-    [[ $key =~ (SIZE|PASS|NAME)$ ]] || readonly $key;}
+  for key in ${SETOPT_KEYS};{ [[ $key =~ (SIZE|NAME)$ ]] || readonly $key;}
   # Append option keys relevant to config based actions
-  for key in {SAVE_CONFIG,LOAD_CONFIG,INSTALL};{
+  for key in {SAVE_CONFIG,LOAD_CONFIG,GENERATE};{
     SETOPT_KEYS+=("$key")
     setopt_pairs_f+=("[${key/_/ }]")
   }
@@ -421,7 +421,7 @@ seq_select() {
   win_ctx_op 'push'
   # Refer to corresponding arrays and attributes belonging to option key
   : "2,${SAGITTAL},$((${#ref[@]}<LINES-4?${#ref[@]}+2:LINES-2)),$((SAGITTAL-1))"
-  [[ $optkey =~ ^(MIRRORS|PACKAGES_|MOUNT*) ]] && {
+  [[ $optkey =~ ^(MIRRORS|PACKAGES_|EXT4_ADD) ]] && {
     : "$_;${optkey};multi";} || : "$_;${optkey};single"
   win_ctx_op 'set' "$_"
   # If option accepts multiple values, convert string values to indices
@@ -479,20 +479,6 @@ seq_ttin() {
               prompt 'err' "VALID SPECIFIERS: [:digit:]G(iB)"; continue;}
             str="${BASH_REMATCH[1]}GiB"
           ;;&
-          *PASS)
-            [[ -z "$strcomp" ]] && {
-              strcomp="$str"; str=''
-              ((idx=0))
-              printf '\x9BARE-ENTER %s TO CONFIRM\x1B8' "$optkey"; continue
-            } || {
-              [[ "$strcomp" != "$str" ]] && {
-                strcomp=''; str=''
-                printf '\x9BAENTER DESIRED %s      \x1B8' "${optkey//_/ }"
-                prompt 'err' "INVALID MATCH"; continue
-              }
-            }
-            : "hidden"
-          ;;
           *) : "$str";;
         esac
         setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${_}"
@@ -564,14 +550,14 @@ nav_single() {
           : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
         printf '  \x9B7m%s\x1B8' "$_"
         case ${SETOPT_KEYS[$idx]} in
-          ESP*|*VOLUME_SIZE|*NAME|*PASS) seq_ttin $idx;;
+          ESP_SIZE|*VOLUME_SIZE|*NAME) seq_ttin $idx;;
           SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
           LOAD*)
             load_config
             (($?)) && : 'NO SAVEFILE' || : 'SAVE LOADED'
             printf '\xAF \x9B7m[%s]\x1B8' "$_"
           ;;
-          INSTALL) install_config;;
+          GENERATE) generate_scripts;;
           *) seq_select $idx;;
         esac
       ;;
@@ -648,7 +634,7 @@ nav_multi() {
   for((;;)){
     get_key key
     case $key in
-      $'\x1B') return 0;; # ESC
+      q|$'\x1B') return 0;; # ESC
       $'\x0A') return 1;; # ENTER
       k|$'\x9BA') # UP
         # Ignore 0th index
@@ -720,7 +706,7 @@ save_config() {
   local key white_sp
   exec {save_fd}>${CACHE_DIR}/options.conf
   for key in ${SETOPT_KEYS[@]};{
-    [[ $key =~ ^(PACKAGES|.*PASS|.*CONFIG|INSTALL)$ || -z "${setopt_pairs[$key]}" ]] &&
+    [[ $key =~ ^(PACKAGES|.*CONFIG|GENERATE)$ || -z "${setopt_pairs[$key]}" ]] &&
       continue
     printf '%s\n' "[$key]" >&$save_fd
     [[ $key =~ ^(MIRRORS|MOUNT*) ]] && {
@@ -921,7 +907,7 @@ install_extra_packages() {
   :
 }
 
-install_config() {
+generate_scripts() {
   local key i
   local -n opt
   opt=setopt_pairs

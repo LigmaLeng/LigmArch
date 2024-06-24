@@ -9,17 +9,6 @@ TIMEZONE         = Australia/Melbourne
 HOSTNAME         = unset
 USERNAME         = unset
 
-[OPTION]
-KERNEL =
-         linux
-         linux-lts
-
-EXT4_BLOCK_SIZE =
-                  default
-                  1024B
-                  2048B
-                  4096B
-
 [LIST]
 MIRRORS =
           unset
@@ -27,6 +16,17 @@ MIRRORS =
 EXT4_ADD_FEATURES =
                     encrypt
                     verity
+
+[OPTION]
+EXT4_BLOCK_SIZE =
+                  default
+                  1024B
+                  2048B
+                  4096B
+
+KERNEL =
+         linux
+         linux-lts
 
 [PACKAGES]
 SYSTEM =
