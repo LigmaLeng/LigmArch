@@ -1,65 +1,48 @@
-[DEFAULT]
-KEYMAP           = dvorak-programmer
-LOCALE           = en_AU.UTF-8
-BLOCK_DEVICE     = unset
-ESP_SIZE         = 1GiB
-ROOT_VOLUME_SIZE = 64GiB
-HOME_VOLUME_SIZE = 256GiB
-TIMEZONE         = Australia/Melbourne
-HOSTNAME         = unset
-USERNAME         = unset
-
-[LIST]
-MIRRORS =
-          unset
-
-EXT4_ADD_FEATURES =
-                    encrypt
-                    verity
-
-[OPTION]
-EXT4_BLOCK_SIZE =
-                  default
-                  1024B
-                  2048B
-                  4096B
-
-KERNEL =
-         linux
-         linux-lts
+[OPTIONS]
+keymap            = dvorak-programmer
+locale            = en_AU.UTF-8
+block_device      = unset
+timezone          = Australia/Melbourne
+mirrors           =
+                    unset
+esp_size          = 1GiB
+root_volume_size  = 64GiB
+home_volume_size  = 256GiB
+hostname          = unset
+username          = unset
 
 [PACKAGES]
-SYSTEM =
-         bluez
-         bluez-utils
-         linux-firmware
-         wayland
-         xdg-user-dirs
+system            =
+                    bluez
+                    bluez-utils
+                    linux-firmware
+                    wayland
+                    xdg-user-dirs
 
-TERMINAL =
-           bash-completion
-           dialog
-           neovim
-           terminus-font
+terminal          =
+                    bash-completion
+                    dialog
+                    neovim
+                    terminus-font
 
-NETWORKING =
-             networkmanager
-             firewalld
-             openssh
+networking        =
+                    networkmanager
+                    firewalld
+                    openssh
 
-TOOLS =
-        cmake
-        gcc
-        gdb
-        git
-        curl
-        fzf
-        pandoc-cli
-        ripgrep-all
-        w3m
+tools             =
+                    cmake
+                    gcc
+                    gdb
+                    git
+                    curl
+                    fzf
+                    pandoc-cli
+                    ripgrep-all
+                    w3m
 
-RTFM =
-       arch-wiki-docs
-       man-db
-       man-pages
-       wikiman
+rtfm              =
+                    arch-wiki-docs
+                    man-db
+                    man-pages
+                    wikiman

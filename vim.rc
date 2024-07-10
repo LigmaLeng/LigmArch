@@ -4,12 +4,11 @@ set fileformat=unix
 filetype plugin on
 syntax on
 " SPACING
-set shiftwidth=2
-set shiftround
+set shiftwidth=8
+set tabstop=8
 set autoindent
 set smartindent
-set tabstop=2
-set expandtab
+set noexpandtab
 set backspace=indent,eol,start
 
 
@@ -89,6 +88,33 @@ nnoremap n nzz
 nnoremap N Nzz
 nnoremap { {zz
 nnoremap } }zz
+"   Bind meta-keys
+execute "set <M-N>=\en"
+execute "set <M-P>=\ep"
+execute "set <M-B>=\eb"
+execute "set <M-F>=\ef"
+"   Emacs-style insert mode
+inoremap <C-A> <Home>
+inoremap <C-B> <Left>
+inoremap <C-D> <Del>
+inoremap <C-E> <End>
+inoremap <C-F> <Right>
+inoremap <M-B> <S-Left>
+inoremap <M-F> <S-Right>
+inoremap <M-N> <C-N>
+inoremap <M-P> <C-P>
+inoremap <C-N> <Down>
+inoremap <C-P> <Up>
+"   Emacs-style command mode
+cnoremap <C-A> <Home>
+cnoremap <C-B> <Left>
+cnoremap <C-D> <Del>
+cnoremap <C-E> <End>
+cnoremap <C-F> <Right>
+cnoremap <C-N> <Down>
+cnoremap <C-P> <Up>
+cnoremap <M-B> <S-Left>
+cnoremap <M-F> <S-Right>
 "   Highlight
 nnoremap <Leader><Leader> :noh<CR>
 "   Quiting

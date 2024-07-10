@@ -37,12 +37,15 @@
 CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
 TEMPLATE_PATH="${CTX_DIR}/options.setup"
 READ_OPTS=(-rs -t 0.03)
+declare -A LIG_CONFIG
 readonly CTX_DIR CACHE_DIR TEMPLATE_PATH READ_OPTS
 declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 declare -a SETOPT_KEYS SETOPT_KEYS_F setopt_pairs_f win_ctx_a
 declare -A setopt_pairs win_ctx
 win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
 hash sort
+# Use ANSI-C standard for language collation
+declare -rx LC_ALL=C
 
 die() {
   local -a bash_trace
@@ -57,18 +60,15 @@ echoes()for((i=0;i++<$2;)){ printf $1;}
 
 nap() {
   # Open file descriptor if doesn't exist pipe empty subshell
-  [[ -n "${nap_fd:-}" ]] || { exec {nap_fd}<> <(:);}
+  [[ -n "${fd_nap:-}" ]] || { exec {fd_nap}<> <(:);}
   # Attempt to read from empty file descriptor for 1 ms if no timeout specified
-  read -t ${1:-0.001} -u $nap_fd || :
+  read -t ${1:-0.001} -u $fd_nap || :
 }
 
 set_console() {
-  # Use ANSI-C standard for language collation
-  readonly LC_ALL=C
   # Backup and modify stty settings for io operations (restored on exit)
   readonly STTY_BAK=$(stty -g)
   stty -echo -icanon -ixon isig susp undef
-  #stty -echo -icanon -ixon isig susp undef
   # Select default (single byte character set) and lock G0 and G1 charsets
   printf '\x1B%s' '%@' '(K' ')K'
 }
@@ -335,18 +335,18 @@ options_init() {
   [[ -a "${CACHE_DIR}/mirrorlist" ]] && {
     while read; do MIRRORS+=("$REPLY"); done < "${CACHE_DIR}/mirror_countries"
   } || {
-    exec {mirror_fd}<> <(curl -s "https://archlinux.org/mirrorlist/all/https/")
+    exec {fd_mirror}<> <(curl -s "https://archlinux.org/mirrorlist/all/https/")
     # Discard lines up to first comment containing a named country
-    while read -u $mirror_fd; do [[ "$REPLY" == '## Worldwide' ]] && break; done
+    while read -u $fd_mirror; do [[ "$REPLY" == '## Worldwide' ]] && break; done
     # Append countries with active mirrors to list while caching all server URLs
-    while read -t 0 -u $mirror_fd && read -u $mirror_fd; do
+    while read -t 0 -u $fd_mirror && read -u $fd_mirror; do
       [[ "$REPLY" == '## '* ]] && {
         MIRRORS+=("${REPLY#* }")
         printf '%s\n' "${MIRRORS[-1]}" >> "${CACHE_DIR}/mirror_countries"
       }
       printf '%s\n' "$REPLY" >> "${CACHE_DIR}/mirrorlist"
     done
-    exec {mirror_fd}>&-
+    exec {fd_mirror}>&-
   }
   # Get localisation files
   KEYMAP=($(localectl list-keymaps))
@@ -704,24 +704,24 @@ nav_multi() {
 
 save_config() {
   local key white_sp
-  exec {save_fd}>${CACHE_DIR}/options.conf
+  exec {fd_save}>${CACHE_DIR}/options.conf
   for key in ${SETOPT_KEYS[@]};{
     [[ $key =~ ^(PACKAGES|.*CONFIG|GENERATE)$ || -z "${setopt_pairs[$key]}" ]] &&
       continue
-    printf '%s\n' "[$key]" >&$save_fd
+    printf '%s\n' "[$key]" >&$fd_save
     [[ $key =~ ^(MIRRORS|MOUNT*) ]] && {
-      printf 'list =\n      ' >&$save_fd
+      printf 'list =\n      ' >&$fd_save
       : "${setopt_pairs[$key]//  /$'\n',}"
-      printf '%s\n\n' "${_//,/      }" >&$save_fd
-    } || printf 'value = %s\n\n' "${setopt_pairs[$key]}" >&$save_fd
+      printf '%s\n\n' "${_//,/      }" >&$fd_save
+    } || printf 'value = %s\n\n' "${setopt_pairs[$key]}" >&$fd_save
   }
-  printf '[PACKAGES]\n' >&$save_fd
+  printf '[PACKAGES]\n' >&$fd_save
   for key in ${PACKAGES[@]};{
-    printf '%s\nlist =\n      ' "[.$key]" >&$save_fd
+    printf '%s\nlist =\n      ' "[.$key]" >&$fd_save
     : "${setopt_pairs["PACKAGES_$key"]//  /$'\n',}"
-    printf '%s\n\n' "${_//,/      }" >&$save_fd
+    printf '%s\n\n' "${_//,/      }" >&$fd_save
   }
-  exec {save_fd}>&-
+  exec {fd_save}>&-
 }
 
 load_config() {
@@ -795,33 +795,33 @@ setup_mirrors() {
   pacman -S pacman-contrib --noconfirm --needed
   [[ -a "/etc/pacman.d/mirrorlist.bak" ]] ||
     cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
-  exec {mirror_fd}>${CACHE_DIR}/mirrors
+  exec {fd_mirror}>${CACHE_DIR}/mirrors
   while read; do
     [[ "$REPLY" == '##'* ]] || continue
     [[ "${setopt_pairs[MIRRORS]}" =~ "${REPLY#* }" ]] && {
       while read; do
         [[ -z $REPLY ]] && break
-        printf '%s\n' "${REPLY#\#}" >&$mirror_fd
+        printf '%s\n' "${REPLY#\#}" >&$fd_mirror
       done
     }
   done < "${CACHE_DIR}/mirrorlist"
-  exec {mirror_fd}>&-
+  exec {fd_mirror}>&-
   rankmirrors ${CACHE_DIR}/mirrors > /etc/pacman.d/mirrorlist
 }
 
 edit_pacconf() {
   local stream
   read -d '' -r stream < /etc/pacman.conf
-  exec {stream_fd}>/etc/pacman.conf
+  exec {fd_stream}>/etc/pacman.conf
   while read; do
     case $REPLY in
-      '#[multilib]') printf '[multilib]\n' >&$stream_fd; read;&
+      '#[multilib]') printf '[multilib]\n' >&$fd_stream; read;&
       '#ParallelDownloads'*) : "${REPLY#\#}";;
       *) : "$REPLY";;
     esac
-    printf '%s\n' "$_" >&$stream_fd
+    printf '%s\n' "$_" >&$fd_stream
   done <<< "$stream"
-  exec {stream_fd}>&-
+  exec {fd_stream}>&-
 }
 
 strapon() {
@@ -843,13 +843,13 @@ setup_localisation() {
   local stream
   printf '%s\n' "${setopt_pairs[HOSTNAME]}" > /mnt/etc/hostname
   read -d '' -r stream < /mnt/etc/locale.gen
-  exec {stream_fd}>/mnt/etc/locale.gen
+  exec {fd_stream}>/mnt/etc/locale.gen
   while read; do
     : "$REPLY"
     [[ "$_" == "#${setopt_pairs[LOCALE]} "* ]] && : "${_#\#}"
-    printf '%s\n' "$_" >&$stream_fd
+    printf '%s\n' "$_" >&$fd_stream
   done <<< "$stream"
-  exec {stream_fd}>&-
+  exec {fd_stream}>&-
   printf 'LANG=%s\n' "${setopt_pairs[LOCALE]}" > /mnt/etc/locale.conf
   printf 'KEYMAP=%s\n' "${setopt_pairs[KEYMAP]}" > /mnt/etc/vconsole.conf
   #[[ "${setopt_pairs[PACKAGES_TERMINAL]}" =~ terminus-font ]] &&
@@ -865,16 +865,16 @@ setup_chroot() {
   arch-chroot /mnt /bin/bash -c "${_}; hwclock --systohc; locale-gen"
   printf '%s\n' "${setopt_pairs[HOSTNAME]}" > /mnt/etc/hostname
   read -d '' -r stream < /mnt/etc/mkinitcpio.conf
-  exec {stream_fd}>/mnt/etc/mkinitcpio.conf
+  exec {fd_stream}>/mnt/etc/mkinitcpio.conf
   while read; do
     : "$REPLY"
     [[ "$_" == HOOKS* ]] && {
       : "HOOKS=(systemd autodetect microcode modconf keyboard"
       : "$_ sd-vconsole block lvm2 filesystems fsck)"
     }
-    printf '%s\n' "$_" >&$stream_fd
+    printf '%s\n' "$_" >&$fd_stream
   done <<< "$stream"
-  exec {stream_fd}>&-
+  exec {fd_stream}>&-
   arch-chroot /mnt mkinitcpio -p ${setopt_pairs[KERNEL]}
   arch-chroot /mnt bootctl --esp-path=/efi install
   printf 'root:%s\n' "${setopt_pairs[ROOTPASS]}" > >(arch-chroot /mnt chpasswd)
@@ -911,7 +911,7 @@ generate_scripts() {
   local key i
   local -n opt
   opt=setopt_pairs
-  exec {log_fd}>"${CACHE_DIR}/setup.log"
+  exec {fd_log}>"${CACHE_DIR}/setup.log"
   # Check options
   for key in {MIRRORS,BLOCK_DEVICE};{
     [[ ${opt[$key]} == 'unset' ]] && { exit_prompt 'config'; return;}
@@ -927,12 +927,12 @@ generate_scripts() {
       (($_<i)) && { exit_prompt 'config'; return;} || break
     }
   }
-  setup_partitions >&$log_fd 2>&1
-  setup_mirrors >&$log_fd 2>&1
+  setup_partitions >&$fd_log 2>&1
+  setup_mirrors >&$fd_log 2>&1
   strapon
   setup_localisation
   setup_chroot
-  exec {log_fd}>&-
+  exec {fd_log}>&-
   exit 0
 }
 
