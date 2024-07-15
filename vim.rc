@@ -42,7 +42,7 @@ set wildmenu
 set wildmode=list:longest
 set shortmess=aost
 " Timing
-set timeoutlen=300
+set timeoutlen=200
 
 
 " PERSISTENCE
@@ -118,8 +118,9 @@ cnoremap <M-F> <S-Right>
 "   Highlight
 nnoremap <Leader><Leader> :noh<CR>
 "   Quiting
-nnoremap <Leader>htn :q<CR>
-nnoremap <Leader>tns :wq<CR>
+nnoremap <Leader>htn :w<CR>
+nnoremap <Leader>tns :q<CR>
+nnoremap <Leader>snth :wq<CR>
 nnoremap <Leader>ueo :qa<CR>
 "   Pasting
 xnoremap <Leader>p "_dP
@@ -129,9 +130,9 @@ inoremap {} {}<LEFT>
 inoremap [] []<LEFT>
 inoremap "" ""<LEFT>
 inoremap '' ''<LEFT>
-inoremap (<LEADER> () 
-inoremap {<LEADER> {} 
-inoremap [<LEADER> [] 
+inoremap (<LEADER> ()
+inoremap {<LEADER> {}
+inoremap [<LEADER> []
 inoremap {<CR> {<CR><CR>}<UP><TAB>
 
 set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r

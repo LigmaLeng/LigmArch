@@ -21,6 +21,7 @@ setlocal comments=:#
 setlocal commentstring=#\ %s
 setlocal complete=.,w,b,u,t,i
 setlocal completefunc=
+setlocal completeopt=
 setlocal concealcursor=
 setlocal conceallevel=0
 setlocal nocopyindent
@@ -34,7 +35,7 @@ setlocal dictionary=
 setlocal nodiff
 setlocal equalprg=
 setlocal errorformat=
-setlocal expandtab
+setlocal noexpandtab
 if &filetype != 'sh'
 setlocal filetype=sh
 endif
@@ -52,7 +53,7 @@ setlocal foldnestmax=20
 setlocal foldtext=foldtext()
 setlocal formatexpr=
 setlocal formatlistpat=^\\s*\\d\\+[\\]:.)}\\t\ ]\\s*
-setlocal formatoptions=croql
+setlocal formatoptions=tcq
 setlocal formatprg=
 setlocal grepprg=
 setlocal iminsert=0
@@ -89,7 +90,7 @@ setlocal norightleft
 setlocal rightleftcmd=search
 setlocal noscrollbind
 setlocal scrolloff=-1
-setlocal shiftwidth=2
+setlocal shiftwidth=8
 setlocal noshortname
 setlocal showbreak=
 setlocal sidescrolloff=-1
@@ -109,7 +110,7 @@ setlocal synmaxcol=3000
 if &syntax != 'sh'
 setlocal syntax=sh
 endif
-setlocal tabstop=2
+setlocal tabstop=8
 setlocal tagcase=
 setlocal tagfunc=
 setlocal tags=
@@ -132,49 +133,52 @@ setlocal nowrap
 setlocal wrapmargin=0
 silent! normal! zE
 1,35fold
-36,46fold
-47,55fold
-56,57fold
-58,64fold
-65,75fold
-76,88fold
-89,93fold
-94,104fold
-105,113fold
-114,139fold
-140,196fold
-197,227fold
-228,260fold
-261,290fold
-291,374fold
-375,389fold
-390,407fold
-408,413fold
-414,455fold
-456,525fold
-526,626fold
-627,704fold
-705,726fold
-727,754fold
-755,792fold
-793,811fold
-812,826fold
-827,841fold
-842,860fold
-861,885fold
-886,905fold
-906,909fold
-910,938fold
-939,948fold
+36,49fold
+50,64fold
+65,73fold
+74,78fold
+79,85fold
+91,97fold
+98,111fold
+112,122fold
+123,148fold
+149,205fold
+206,236fold
+237,269fold
+270,299fold
+300,322fold
+323,334fold
+340,386fold
+387,401fold
+402,419fold
+420,425fold
+426,467fold
+468,537fold
+538,638fold
+639,716fold
+717,738fold
+739,766fold
+767,804fold
+805,823fold
+824,838fold
+839,853fold
+854,872fold
+873,897fold
+898,916fold
+917,920fold
+921,949fold
+950,959fold
 let &fdl = &fdl
-705
+340
 normal! zo
-let s:l = 705 - ((315 * winheight(0) + 21) / 43)
+950
+normal! zo
+let s:l = 363 - ((20 * winheight(0) + 21) / 42)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 705
-normal! 09|
+keepjumps 363
+normal! 017|
 let &g:so = s:so_save | let &g:siso = s:siso_save
 doautoall SessionLoadPost
 " vim: set ft=vim :
