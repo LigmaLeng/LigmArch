@@ -33,62 +33,91 @@
 #        rdma-core
 # 
 
-[[ ${0%/*} == ${0} ]] && CTX_DIR='.' || CTX_DIR=${0%/*}
-CACHE_DIR=${XDG_CACHE_HOME:=${HOME}/.cache/ligmarch}
-TEMPLATE_PATH="${CTX_DIR}/options.setup"
+declare -x LANG=C
+declare -x LC_ALL=C
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL WINDEX WINOFFS
+GLOBAL_KEYLIST=()
+WINDOW_STACK=()
 READ_OPTS=(-rs -t 0.03)
-declare -A LIG_CONFIG
-readonly CTX_DIR CACHE_DIR TEMPLATE_PATH READ_OPTS
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-declare -a SETOPT_KEYS SETOPT_KEYS_F setopt_pairs_f win_ctx_a
-declare -A setopt_pairs win_ctx
-win_ctx=(attr '' nref '' pg_type '' offset '' idx '' idxs '')
-hash sort
-# Use ANSI-C standard for language collation
-declare -rx LC_ALL=C
+TMP_DIR=$(mktemp -d)
+CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}/ligmarch"
+[[ -d $CACHE_DIR ]]\
+	|| mkdir -p $CACHE_DIR
+[[ ${0%/*} == ${0} ]]\
+	&& CTX_DIR='.'\
+	|| CTX_DIR=${0%/*}
+MIRROR_URL="https://archlinux.org/mirrorlist/all/https/"
 
-die() {
-  local -a bash_trace
-  bash_trace=(${BASH_SOURCE[1]} ${BASH_LINENO[0]} ${FUNCNAME[1]})
-  printf '\x9B%s' m 2J r
-  printf '%s: line %d: %s: %s\n' ${bash_trace[@]} "${1-Died}" >&2
-  printf 'press any key to continue'
-  for((;;)){ read ${READ_OPTS[@]} -N1; (($?>128)) || exit 1;}
+cleanup()
+{
+# m     Reset Colours 
+# r     Reset scrolling region
+# 2J    Clear screen
+# ?25h  Show cursor
+# ?7h   Enable line wrapping
+	printf '\x9B%s' m 2J r ?25h ?7h
+# Return character set back to UTF-8
+	printf '\x1B%%G'
+	[[ -a "${TMP_DIR}/stty.bak" ]] &&
+		stty $(<"${TMP_DIR}/stty.bak")
+	rm -rf "${TMP_DIR}"
 }
 
-echoes()for((i=0;i++<$2;)){ printf $1;}
-
-nap() {
-  # Open file descriptor if doesn't exist pipe empty subshell
-  [[ -n "${fd_nap:-}" ]] || { exec {fd_nap}<> <(:);}
-  # Attempt to read from empty file descriptor for 1 ms if no timeout specified
-  read -t ${1:-0.001} -u $fd_nap || :
+die()
+{
+	trap - EXIT
+	cleanup
+	: "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${FUNCNAME[1]}: ${1:-Died}"
+	printf '%s\n' "$_" >&2
+	exit 1
 }
 
-set_console() {
-  # Backup and modify stty settings for io operations (restored on exit)
-  readonly STTY_BAK=$(stty -g)
-  stty -echo -icanon -ixon isig susp undef
-  # Select default (single byte character set) and lock G0 and G1 charsets
-  printf '\x1B%s' '%@' '(K' ')K'
+echoes()
+{
+	for ((i=0;i++<$2};)){ printf %b "$1";}
 }
 
-cleanup() {
-  # m     Reset Colours 
-  # ?25h  Show cursor
-  # ?7h   Enable line wrapping
-  # 2J    Clear screen
-  # r     Reset scrolling region
-  printf '\x9B%s' m ?25h ?7h 2J r
-  # Return character set back to UTF-8
-  printf '\x1B%%G'
-  # Reset stty if modified
-  [[ -n $STTY_BAK ]] && stty $STTY_BAK
+nap()
+{
+	[[ -n "${fd_nap:-}" ]]\
+		|| exec {fd_nap}<> <(:)
+	read -t ${1:-0.001} -u ${fd_nap} || :
 }
 
-get_console_size() {
-  ((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
-  ((TRANSVERSE=(LINES+1)>>1,SAGITTAL=(COLUMNS+1)>>1))
+fifo_read_through()
+{
+	[[ -p "/proc/self/fd/${1:-'0'}" ]]\
+		|| die 'EINVAL: not named pipe'
+	[[ -z "${2:-}" ]] && {
+		while read -u $1; do
+			[[ -z "$REPLY" ]] && break
+		done
+	} || {
+		while read -u $1; do
+			[[ "$REPLY" =~ $2 ]] && break
+		done
+	}
+}
+
+get_console_size()
+{
+	((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
+	TRANSVERSE='(LINES+1)>>1'
+	SAGITTAL='(COLUMNS+1)>>1'
+}
+
+set_console()
+{
+	stty -g > "${TMP_DIR}/stty.bak"
+	stty -echo -icanon -ixon isig susp undef
+# Select default (single byte character set) and lock G0 and G1 charsets
+	printf '\x1B%s' '%@' '(K' ')K'
+# 2J    Clear screen
+# 31m   Foreground red
+# ?25l  Hide cursor
+# ?7l   Disable line wrapping
+	printf '\x9B%s' 2J 31m ?25l ?7l
+	get_console_size
 }
 
 test_size() {
@@ -100,15 +129,6 @@ test_size() {
   !((${dim[0]})) || !((${dim[1]})) && die 'Parse Error'
   LINES=${dim[0]}; COLUMNS=${dim[1]}
   return 0
-}
-
-display_init() {
-  get_console_size
-  # 2J    Clear screen
-  # 31m   Foreground red
-  # ?25l  Hide cursor
-  # ?7l   Disable line wrapping
-  printf '\x9B%s' 2J 31m ?25l ?7l
 }
 
 display_cleave() {
@@ -288,88 +308,78 @@ exit_prompt() {
   win_ctx_op 'pop'
 }
 
-options_init() {
-  local lim key i
-  lim=0
-  # Create cache directory if non-existent
-  [[ -d $CACHE_DIR ]] || mkdir -p $CACHE_DIR
-  # Parse config template
-  while read; do
-    : "$REPLY"
-    [[ "$_" == '['* ]] && { : "${_#[}"; i="${_%]}"; continue;}
-    [[ -z "$_" ]] && continue || key="${REPLY%%[[:space:]]*}"
-    [[ $i == DEFAULT ]] && {
-      SETOPT_KEYS+=("$key")
-      setopt_pairs[$key]=${REPLY#*=[[:space:]]} 
-    } || {
-      [[ $i == PACKAGES ]] && key="PACKAGES_$key" || SETOPT_KEYS+=("$key")
-      declare -ga $key
-      local -n ref=$key
-      while read; do
-        [[ -z "$REPLY" ]] && break
-        ref+=("${REPLY#"${REPLY%%[![:space:]]*}"}")
-        setopt_pairs[$key]+="  ${ref[-1]}"
-      done
-      [[ $i == OPTION ]] && : "${ref[0]}" || : "${setopt_pairs[$key]#  }"
-      setopt_pairs[$key]="$_"
-      [[ $key == MIRRORS ]] && ref=()
-      [[ $i == PACKAGES ]] && {
-        [[ -v PACKAGES ]] || { declare -ga PACKAGES; SETOPT_KEYS+=($i);}
-        PACKAGES+=(${key#PACKAGES_})
-        continue
-      }
-    }
-    # Keep track of longest optkey for page formatting purposes
-    ((lim=${#key}>lim?${#key}:$lim))
-  done < "$TEMPLATE_PATH"
-  # Format spacing for printing setup options
-  for((i=-1;++i<${#SETOPT_KEYS[@]};)){
-    key="${SETOPT_KEYS[$i]}"
-    : "${key//_/ }"
-    SETOPT_KEYS_F+=("${_}$(echoes '\x20' $((lim-${#_}+3)))")
-    setopt_pairs_f+=("${SETOPT_KEYS_F[-1]}${setopt_pairs[$key]}")
-    [[ $key == *NAME ]] && setopt_pairs[$key]=''
-  }
-  # Retrieve currently active mirrors from cache if available
-  # Else retrieve current mirrorlist from official mirrorlist generator page
-  [[ -a "${CACHE_DIR}/mirrorlist" ]] && {
-    while read; do MIRRORS+=("$REPLY"); done < "${CACHE_DIR}/mirror_countries"
-  } || {
-    exec {fd_mirror}<> <(curl -s "https://archlinux.org/mirrorlist/all/https/")
-    # Discard lines up to first comment containing a named country
-    while read -u $fd_mirror; do [[ "$REPLY" == '## Worldwide' ]] && break; done
-    # Append countries with active mirrors to list while caching all server URLs
-    while read -t 0 -u $fd_mirror && read -u $fd_mirror; do
-      [[ "$REPLY" == '## '* ]] && {
-        MIRRORS+=("${REPLY#* }")
-        printf '%s\n' "${MIRRORS[-1]}" >> "${CACHE_DIR}/mirror_countries"
-      }
-      printf '%s\n' "$REPLY" >> "${CACHE_DIR}/mirrorlist"
-    done
-    exec {fd_mirror}>&-
-  }
-  # Get localisation files
-  KEYMAP=($(localectl list-keymaps))
-  TIMEZONE=($(timedatectl list-timezones))
-  # Parse supported locales and format spacing for printing
+add_option_key()
+{
+	[[ ! $2 =~ ^((single|nested|multi)_select|validate)$ ]] && {
+		die
+	} || {
+		local opt_name="$1"
+		declare -g ${opt_name}{_str,_type}
+		local -n ref_opt_type=${opt_name}_type
+		ref_opt_type="$2"
+		GLOBAL_KEYLIST+=("${opt_name}")
+	}
+	[[ ${ref_opt_type} == validate ]] && {
+		declare -g ${opt_name}_tgt
+	} || {
+		declare -ga ${opt_name}_src
+		[[ ${ref_opt_type} == multi ]]\
+			&& declare -ga ${opt_name}_tgt\
+			|| declare -gi ${opt_name}_tgt
+	}
+	((${#opt_name}>${opt_columns:=0}-3))\
+		&& opt_columns=${#opt_name}+3
+}
+
+add_function_key()
+{
+	[[ $(type -t "$1") != function ]]\
+		&& die
+	local func_name=$1
+	declare -g ${func_name}_str
+	local -n str_ref=$_
+	: "[${func_name/_/ }]"
+	str_ref="${_^^}"
+	GLOBAL_KEYLIST+=("${func_name}")
+}
+
+get_mirrorlist()
+{
+	local -n ref="$1"
+	mkdir "${TMP_DIR}/mirrors"
+	exec {fd_mirrors}<> <(curl -s ${MIRROR_URL})
+	fifo_read_through ${fd_mirrors} "^## Worldwide"
+	fifo_read_through ${fd_mirrors} ''
+	while read -t 0 -u ${fd_mirrors} && read -u ${fd_mirrors}; do
+		case "$REPLY" in
+		'##'*) ref+=("${REPLY#* }");;
+		'#'*) printf "${REPLY#\#}\n" >> "${TMP_DIR}/mirrors/${arr[-1]}";;
+		esac
+	done
+	exec {fd_mirrors}>&-
+}
+
+options_init()
+{
+	local opt
+	for opt in {keymap,locale,timezone}; do
+		add_option_key $opt single_select
+	done
+	keymap_src=($(localectl list-keymaps))
+	timezone_src=($(timedatectl list-timezones))
+	IFS=$'\n' read -d '' -a locale_src < "/usr/share/i18n/SUPPORTED"
+	add_option_key mirrors multi_select
+	get_mirrorlist mirrors_src
+	add_option_key hostname validate
+	add_option_key username validate
+	add_option_key block_device single_select
+	for opt in /sys/block/{sd,hd,nvme,mmcblk}*;{
+		: $(($(<"$opt/size")*5120>>30))
+		: "/dev/${opt##*/} "$'\xF7'" ${_:: -1}.${_: -1}Gib"
+		block_device_src+=("$_")
+	}
+# Parse supported locales and format spacing for printing
   ((lim=SAGITTAL-4))
-  while read; do
-    LOCALE+=("${REPLY% *}$(echoes '\x20' $((lim-${#REPLY})))${REPLY#* }")
-  done < "/usr/share/i18n/SUPPORTED"
-  # Retrieve block devices from sysfs
-  for key in /sys/block/*;{
-    [[ $key =~ (sd|hd|nvme|mmcblk) ]] || continue
-    i=$(<"$key/size")
-    ((i=i*5120>>30))
-    BLOCK_DEVICE+=("/dev/${key##*/} "$'\xF7'" ${i:: -1}.${i: -1}Gib")
-  }
-  for key in ${SETOPT_KEYS};{ [[ $key =~ (SIZE|NAME)$ ]] || readonly $key;}
-  # Append option keys relevant to config based actions
-  for key in {SAVE_CONFIG,LOAD_CONFIG,GENERATE};{
-    SETOPT_KEYS+=("$key")
-    setopt_pairs_f+=("[${key/_/ }]")
-  }
-  readonly SETOPT_KEYS SETOPT_KEYS_F ${PACKAGES[@]}
 }
 
 draw_window() {
@@ -503,8 +513,13 @@ seq_ttin() {
         # Regex validation for valid patterns
         case $optkey in
           'HOSTNAME')
-            [[ "${key}" =~ [a-z0-9-] ]] || {
+            ((!idx)) && {
+              [[ "${key}" =~ [a-z0-9] ]] || {
+                prompt 'err' 'VALID 1ST CHARACTERS: [a-z,0-9]'; continue;}
+            } || {
+              [[ "${key}" =~ [a-z0-9-] ]] || {
               prompt 'err' 'VALID CHARACTERS: [a-z,0-9,-]'; continue;}
+	    }
           ;;
           'USERNAME')
             ((!idx)) && {
@@ -900,7 +915,6 @@ setup_zram() {
 # TODO: disable zswap
 # add zswap.enabled=0 to kernel params
 #
-
 }
 
 install_extra_packages() {
@@ -936,13 +950,14 @@ generate_scripts() {
   exit 0
 }
 
-main() {
-  trap 'cleanup' EXIT
-  trap 'get_console_size; draw_window' SIGWINCH
-  trap 'exit_prompt' SIGINT
-  [[ $1 == -d ]] && test_size || set_console
-  display_init
-  options_init 
-  seq_main
+main()
+{
+	trap 'cleanup' EXIT
+	trap 'get_console_size; draw_window' SIGWINCH
+	trap 'exit_prompt' SIGINT
+	shopt -s nullglob
+	set_console
+	options_init 
+	seq_main
 }
 main "$@"

@@ -1,15 +1,16 @@
 [OPTIONS]
 keymap            = dvorak-programmer
 locale            = en_AU.UTF-8
-block_device      = unset
 timezone          = Australia/Melbourne
 mirrors           =
                     unset
-esp_size          = 1GiB
-root_volume_size  = 64GiB
-home_volume_size  = 256GiB
 hostname          = unset
 username          = unset
+block_device      = unset
+esp_size          = 1GiB
+usr_size          = GiB
+root_size         = 64GiB
+home_size         = 256GiB
 
 [PACKAGES]
 system            =
