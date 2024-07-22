@@ -3,6 +3,27 @@
 declare -a global_keylist
 declare -i opt_columns
 
+#k|$'\x9BA') # UP/DOWN fallthrough
+#[[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
+#  ((${#_}>COLUMNS-4)) && {
+#    : "${_::$((COLUMNS-6))}${_: -2}"; : "${_%  *} ...${_: -2}";}
+#  ((${#ref[$WINDEX]}>COLUMNS-8)) && {
+#    : "$_,${ref[$WINDEX]::$((COLUMNS-8))}"
+#    : "${_%  *} ..."
+#  } || : "$_,${ref[$WINDEX]}" 
+#} || : "$_,${ref[$WINDEX]}"
+#[[ $_ =~ ^(  .*),(.),(.*)$ ]] && {
+#  printf '%s\x1B8\x9B%s\x1B7' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+#  printf '\xAF \x9B7m%s\x1B8' "${BASH_REMATCH[3]}"
+#}
+#        case ${SETOPT_KEYS[$idx]} in
+#          ESP_SIZE|*VOLUME_SIZE|*NAME) seq_ttin $idx;;
+#          SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
+#          LOAD*) load_config (($?)) && : 'NO SAVEFILE' || : 'SAVE LOADED' printf '\xAF \x9B7m[%s]\x1B8' "$_"
+#          ;;
+#          GENERATE) generate_scripts;;
+#          *) seq_select $idx;;
+#        esac
 die()
 {
 	: "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${FUNCNAME[1]}: ${1:-Died}"
@@ -83,3 +104,4 @@ streamon_daemon() {
 #                    4096B
 #streamon_daemon
 init
+declare -x LC_ALL=C; shopt -s globstar; :> tdglob; for a in /usr/share/zoneinfo/posix/**;{ [[ -d "$a" ]] || echo "$a" >> tdglob;}

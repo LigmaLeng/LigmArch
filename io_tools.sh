@@ -35,9 +35,7 @@
 
 declare -x LANG=C
 declare -x LC_ALL=C
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL WINDEX WINOFFS
-GLOBAL_KEYLIST=()
-WINDOW_STACK=()
+declare -i LINES COLUMNS TRANSVERSE SAGITTAL
 READ_OPTS=(-rs -t 0.03)
 TMP_DIR=$(mktemp -d)
 CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}/ligmarch"
@@ -48,18 +46,50 @@ CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}/ligmarch"
 	|| CTX_DIR=${0%/*}
 MIRROR_URL="https://archlinux.org/mirrorlist/all/https/"
 
+add_function_key()
+{
+	local func_name=$1
+	[[ $(type -t "${func_name}") == function ]]\
+		|| die
+	: "[${func_name/_/ }]"
+	main_keylist_strs+="${_^^}"
+	main_keylist+=("${func_name}")
+}
+
+add_option_key()
+{
+	[[ $2 =~ ^((single|nested|multi)_select|form)$ ]]\
+		|| die
+	local opt_name="$1"
+	local -n wintype=${opt_name}_wintype
+	declare -g ${!wintype}
+	wintype="$2"
+	[[ ${wintype} == form ]] && {
+		declare -g ${opt_name}_tgt
+	} || {
+		declare -ga ${opt_name}_strs
+		[[ ${wintype} == multi ]]\
+			&& declare -ga ${opt_name}_tgt\
+			|| declare -gi ${opt_name}_tgt
+	}
+	((${#opt_name}>${opt_pad:=0}-3))\
+		&& opt_pad=${#opt_name}+3
+	main_keylist+=("${opt_name}")
+	main_keylist_strs+=("${opt_name^^}")
+}
+
 cleanup()
 {
-# m     Reset Colours 
-# r     Reset scrolling region
-# 2J    Clear screen
-# ?25h  Show cursor
-# ?7h   Enable line wrapping
+	# m     Reset Colours 
+	# r     Reset scrolling region
+	# 2J    Clear screen
+	# ?25h  Show cursor
+	# ?7h   Enable line wrapping
 	printf '\x9B%s' m 2J r ?25h ?7h
-# Return character set back to UTF-8
+	# Return character set back to UTF-8
 	printf '\x1B%%G'
-	[[ -a "${TMP_DIR}/stty.bak" ]] &&
-		stty $(<"${TMP_DIR}/stty.bak")
+	[[ -a "${TMP_DIR}/stty.bak" ]]\
+		&& stty $(<"${TMP_DIR}/stty.bak")
 	rm -rf "${TMP_DIR}"
 }
 
@@ -70,65 +100,6 @@ die()
 	: "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${FUNCNAME[1]}: ${1:-Died}"
 	printf '%s\n' "$_" >&2
 	exit 1
-}
-
-echoes()
-{
-	for ((i=0;i++<$2};)){ printf %b "$1";}
-}
-
-nap()
-{
-	[[ -n "${fd_nap:-}" ]]\
-		|| exec {fd_nap}<> <(:)
-	read -t ${1:-0.001} -u ${fd_nap} || :
-}
-
-fifo_read_through()
-{
-	[[ -p "/proc/self/fd/${1:-'0'}" ]]\
-		|| die 'EINVAL: not named pipe'
-	[[ -z "${2:-}" ]] && {
-		while read -u $1; do
-			[[ -z "$REPLY" ]] && break
-		done
-	} || {
-		while read -u $1; do
-			[[ "$REPLY" =~ $2 ]] && break
-		done
-	}
-}
-
-get_console_size()
-{
-	((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
-	TRANSVERSE='(LINES+1)>>1'
-	SAGITTAL='(COLUMNS+1)>>1'
-}
-
-set_console()
-{
-	stty -g > "${TMP_DIR}/stty.bak"
-	stty -echo -icanon -ixon isig susp undef
-# Select default (single byte character set) and lock G0 and G1 charsets
-	printf '\x1B%s' '%@' '(K' ')K'
-# 2J    Clear screen
-# 31m   Foreground red
-# ?25l  Hide cursor
-# ?7l   Disable line wrapping
-	printf '\x9B%s' 2J 31m ?25l ?7l
-	get_console_size
-}
-
-test_size() {
-  # Temp vars as invoking stty overrides values for LINES and COLUMNS
-  local -a dim
-  OPT_TEST=1
-  read -ra dim -p 'Enter display size in {LINES} {COLUMNS} (ex: 25 80): '
-  set_console
-  !((${dim[0]})) || !((${dim[1]})) && die 'Parse Error'
-  LINES=${dim[0]}; COLUMNS=${dim[1]}
-  return 0
 }
 
 display_cleave() {
@@ -157,7 +128,147 @@ display_cleave() {
   printf '\x9Br'
 }
 
-print_pg() {
+draw_window()
+{
+	local blanks y x lines columns
+	read -d '' _ y x lines columns _ _ <<< "${WINDOW_STACK[-1]//:/ }"
+	printf -v blanks '%*s' $((lines > columns ? lines : columns)) ''
+	: "${blanks::$((columns - 2))}"
+	: "${_// /$'\xCD'}"
+	# Position cursor, print top and bottom borders
+	printf '\x9B%s;%sH\xC9%s\xBB' $y $x "$_"
+	printf '\x9B%s;%sH\x1B7\xC8%s\xBC\x1B8\x9BA' $((y + lines - 1)) $x "$_"
+	# Print vertical borders, bring cursor into window, save cursor state
+	: "${blanks::$((lines - 2))}"
+	: "${_// /$'\x1B7\xBA'${blanks::$((columns - 2))}$'\xBA\x1B8\x9BA'}"
+	printf '%s\x1B8\x9BC\x1B7' "$_"
+}
+
+echoes()
+{
+	for ((i=0;i++<$2;)){ printf '%s' "$1";}
+}
+
+exit_prompt() {
+  local exit_query exit_opts
+  [[ ${FUNCNAME[1]} == 'exit_prompt' ]] && return
+  exit_query='Abort setup process'; exit_opts=('(Y|y)es' '(N|n)o')
+  [[ "${1:-}" == 'config' ]] && exit_query="Config error: ${exit_query}"
+  win_ctx_op 'push'
+  display_cleave
+  # Center cursor
+  printf '\x9B%s;%sH' $((TRANSVERSE-(LINES&1))) $SAGITTAL
+  # Pad strings if columns are odd
+  ((COLUMNS&1)) && { exit_query+=' '; exit_opts[0]+=' ';}
+  # Finalise query and concatenate option strings
+  exit_query+='?'; exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
+  # Center and print query and option strings based on length
+  printf '\x9B%sD%s' $(((${#exit_query}>>1)-!(COLUMNS&1))) "$exit_query"
+  printf '\x9B%s' ${SAGITTAL}G 2B
+  printf '\x9B%sD%s' $(((${#exit_opts}>>1)-!(COLUMNS&1))) "$exit_opts"
+  # Infinite loop for confirmation
+  for((;;)){
+    read ${READ_OPTS[@]} -N1
+    # Continue loop if timed out
+    (($?>128)) && continue
+    case "$REPLY" in
+      Y|y) exit 0;;
+      N|n) break;;
+    esac
+  }
+  win_ctx_op 'pop'
+}
+
+fifo_read_through()
+{
+	[[ -p "/proc/self/fd/${1:-'0'}" ]]\
+		|| die 'EINVAL: not named pipe'
+	[[ -z "${2:-}" ]] && {
+		while read -u $1; do
+			[[ -z "$REPLY" ]] && break
+		done
+	} || {
+		while read -u $1; do
+			[[ "$REPLY" =~ $2 ]] && break
+		done
+	}
+}
+
+get_console_size()
+{
+	((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
+	TRANSVERSE='(LINES+1)>>1'
+	SAGITTAL='(COLUMNS+1)>>1'
+	((${#window_stack[@]})) && {
+		: "${window_stack[0]%:*:*}"
+		window_stack[0]="main_keylist:1:1:${window_stack[0]/$_/$LINES:$COLUMNS}"
+		for ((i=0;++i<${#window_stack[@]};));{
+	}
+}
+
+get_key()
+{
+	local -n ref=$1
+	for((;;)){
+		read ${READ_OPTS[@]} -N1 ref
+		# Handling timeouts
+		(($?>128))\
+			&& continue
+		# Handling escape and CSI characters
+		[[ $ref == $'\x1B' ]] && {
+			read ${READ_OPTS[@]} -N1
+			[[ "${REPLY}" != "[" ]]\
+				&& return
+			read ${READ_OPTS[@]} -N2
+			ref=$'\x9B'${REPLY}
+		}
+		return
+	}
+}
+
+get_mirrorlist()
+{
+	local -n ref="$1"
+	mkdir "${TMP_DIR}/mirrors"
+	exec {fd_mirrors}<> <(curl -s ${MIRROR_URL})
+	fifo_read_through ${fd_mirrors} "^## Worldwide"
+	fifo_read_through ${fd_mirrors} ''
+	while read -t 0 -u ${fd_mirrors} && read -u ${fd_mirrors}; do
+		case "$REPLY" in
+		'##'*) ref+=("${REPLY#* }");;
+		'#'*) printf "${REPLY#\#}\n" >> "${TMP_DIR}/mirrors/${arr[-1]}";;
+		esac
+	done
+	exec {fd_mirrors}>&-
+}
+
+get_wintype()
+{
+	[[ $(type -t "${1:?}") == function ]] && {
+		printf %s 'function'
+	} || {
+		local -n ref="${1}_wintype"
+		[[ -v "${!ref}" ]]\
+			&& printf %s "$ref"\
+			|| die
+	}
+}
+
+install()
+{
+	:
+}
+
+nap()
+{
+	[[ -n "${fd_nap:-}" ]]\
+		|| exec {fd_nap}<> <(:)
+	read -t ${1:-0.001} -u ${fd_nap}\
+		|| :
+}
+
+print_pg()
+{
   local i y x m n lim offs
   local -n w ref
   local white_sp
@@ -165,36 +276,13 @@ print_pg() {
   read -d '' y x m n <<< "${w[attr]//,/ }"
   ((m-=2,n-=2))
   ((lim=offs+m<${#ref[@]}?offs+m:${#ref[@]}))
-  white_sp=$(echoes '\x20' $n)
-  # Return cursor to page origin
-  printf '\x9B%s;%sH' $((y+1)) $((x+1))
-  # Erasing whole window is simpler as default virtual console doesn't store
-  # scrolling input and scrolling messes up page borders
-  for((i=0;i++<m;)){ printf '\x1B7%s\x1B8\x9BB' "${white_sp}";}
-  printf '\x9B%s;%sH' $((y+1)) $((x+1))
+  wipe_window
   # Populate page
   case ${w[pg_type]} in
     'single')
-      # If on main menu, truncate string if length would exceed available space
-      # Else, iterate over list normally
-      # Note: Both conditions contain similar statements to avoid the
-      #       cost of evaluating unnecessary inner conditionals
-      [[ ${w[nref]} == 'setopt_pairs_f' ]] && {
-        for((i=offs-1;++i<lim;)){
-          : "${ref[$i]}"
-          ((${#_}>COLUMNS-8)) && {
-            : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
-          printf '\x1B7  %s\x1B8\x9BB' "$_"
-        }
-        printf '\x9B%sA\x1B7  ' $((i-=w[idx]))
-        : "${ref[$((lim-i))]}"
-        ((${#_}>COLUMNS-8)) && {
-          : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";} || : "$_"
-      } || {
         for((i=offs-1;++i<lim;)){ printf '\x1B7  %s\x1B8\x9BB' "${ref[$i]}";}
         printf '\x9B%sA\x1B7  ' $((i-=w[idx]))
         : "${ref[$((lim-i))]}"
-      }
       # Move cursor up to selection and print highlighted selection
       printf '\x9B7m%s\x1B8' "$_"
     ;;
@@ -212,6 +300,77 @@ print_pg() {
   esac
   # Don't print cursor indicator if argument provided
   [[ "${1:-}" == 'nocurs' ]] || printf '\xAF\x9BD'
+}
+
+push_window()
+{
+	[[ $(get_wintype $1) != form ]] && {
+		((${#window_stack[@]})) && {
+			local -n ref=${1}_strs
+			local -i lines="${#ref[@]} < LINES - 4 ? ${#ref[@]} + 2 : LINES - 2"
+			local -i columns='SAGITTAL - 1'
+			window_stack[-1]="${window_stack[-1]%:*:*}:$pg_idx:$pg_off"
+			window_stack+=("${1}:2:${SAGITTAL}:${lines}:${columns}:0:0")
+		} || {
+			window_stack=("main_keylist:1:1:${LINES}:${COLUMNS}:0:0")
+		}
+	} || {
+		:
+	}
+	update_pg_info
+	draw_window
+}
+
+setup_console()
+{
+	stty -g > "${TMP_DIR}/stty.bak"
+	stty -echo -icanon -ixon isig susp undef
+	# Select default (single byte character set) and lock G0 and G1 charsets
+	printf '\x1B%s' '%@' '(K' ')K'
+	# 2J    Clear screen
+	# 31m   Foreground red
+	# ?25l  Hide cursor
+	# ?7l   Disable line wrapping
+	printf '\x9B%s' 2J 31m ?25l ?7l
+}
+
+setup_references()
+{
+	local opt
+	for opt in keymap locale timezone;{
+		add_option_key $opt single_select
+	}
+	add_option_key mirrors multi_select
+	add_option_key hostname form
+	add_option_key username form
+	add_option_key block_device single_select
+	main_keylist_wintype=single_select
+	keymap_strs=($(localectl list-keymaps))
+	timezone_strs=($(timedatectl list-timezones))
+	IFS=$'\n' read -d '' -a locale_strs < "/usr/share/i18n/SUPPORTED"
+	get_mirrorlist mirrors_strs
+	for opt in /sys/block/{sd,hd,nvme,mmcblk}*;{
+		: $(($(<"$opt/size") * 5120>>30))
+		: "/dev/${opt##*/} "$'\xF7'" ${_:: -1}.${_: -1}Gib"
+		block_device_strs+=("$_")
+	}
+	for ((i=-1;++i<${#main_keylist_strs[@]};));{
+		printf -v main_keylist_strs[$i] '%-*sunset' $opt_pad ${main_keylist_strs[$i]}
+	}
+	add_function_key save_config
+	add_function_key load_config
+	add_function_key install
+}
+
+test_size() {
+  # Temp vars as invoking stty overrides values for LINES and COLUMNS
+  local -a dim
+  OPT_TEST=1
+  read -ra dim -p 'Enter display size in {LINES} {COLUMNS} (ex: 25 80): '
+ setup_console 
+  !((${dim[0]})) || !((${dim[1]})) && die 'Parse Error'
+  LINES=${dim[0]}; COLUMNS=${dim[1]}
+  return 0
 }
 
 prompt() {
@@ -245,222 +404,18 @@ prompt() {
   esac
 }
 
-win_ctx_op() {
-  local -n w wa
-  local attr
-  w=win_ctx; wa=win_ctx_a
-  case $1 in
-    'set')
-      read -d '' w[attr] w[nref] w[pg_type] <<< "${2//;/ }"
-      ((w[offset]=0,w[idx]=0,w[idxs]=-1))
-    ;;
-    'push')
-      [[ ${w[pg_type]} == 'prompt' ]] && w[nref]="__${w[nref]}"
-      : "${w[attr]};${w[nref]};${w[pg_type]};${w[offset]};${w[idx]};${w[idxs]}"
-      win_ctx_a+=("$_")
-    ;;
-    'pop')
-      # Inner dimensions
-      for i in ${wa[@]};{
-        : "${i//;/ }"
-        read -d '' w[attr] w[nref] w[pg_type] w[offset] w[idx] w[idxs] <<< "$_"
-        draw_window
-        [[ ${w[pg_type]} == 'prompt' ]] && { w[nref]="${w[nref]#__}";} ||
-          print_pg 'nocurs'
-      }
-      [[ ${w[pg_type]} != 'prompt' ]] && printf '\xAF\x9BD' || {
-        prompt 'new'
-        [[ -n "${w[nref]}" ]] && { prompt 'update';}
-      }
-      unset wa[-1]
-    ;;
-  esac
-  return 0
-}
-
-exit_prompt() {
-  local exit_query exit_opts
-  [[ ${FUNCNAME[1]} == 'exit_prompt' ]] && return
-  exit_query='Abort setup process'; exit_opts=('(Y|y)es' '(N|n)o')
-  [[ "${1:-}" == 'config' ]] && exit_query="Config error: ${exit_query}"
-  win_ctx_op 'push'
-  display_cleave
-  # Center cursor
-  printf '\x9B%s;%sH' $((TRANSVERSE-(LINES&1))) $SAGITTAL
-  # Pad strings if columns are odd
-  ((COLUMNS&1)) && { exit_query+=' '; exit_opts[0]+=' ';}
-  # Finalise query and concatenate option strings
-  exit_query+='?'; exit_opts="${exit_opts[0]}   ${exit_opts[1]}"
-  # Center and print query and option strings based on length
-  printf '\x9B%sD%s' $(((${#exit_query}>>1)-!(COLUMNS&1))) "$exit_query"
-  printf '\x9B%s' ${SAGITTAL}G 2B
-  printf '\x9B%sD%s' $(((${#exit_opts}>>1)-!(COLUMNS&1))) "$exit_opts"
-  # Infinite loop for confirmation
-  for((;;)){
-    read ${READ_OPTS[@]} -N1
-    # Continue loop if timed out
-    (($?>128)) && continue
-    case "$REPLY" in
-      Y|y) exit 0;;
-      N|n) break;;
-    esac
-  }
-  win_ctx_op 'pop'
-}
-
-add_option_key()
+handle_event_enter()
 {
-	[[ ! $2 =~ ^((single|nested|multi)_select|validate)$ ]] && {
-		die
-	} || {
-		local opt_name="$1"
-		declare -g ${opt_name}{_str,_type}
-		local -n ref_opt_type=${opt_name}_type
-		ref_opt_type="$2"
-		GLOBAL_KEYLIST+=("${opt_name}")
-	}
-	[[ ${ref_opt_type} == validate ]] && {
-		declare -g ${opt_name}_tgt
-	} || {
-		declare -ga ${opt_name}_src
-		[[ ${ref_opt_type} == multi ]]\
-			&& declare -ga ${opt_name}_tgt\
-			|| declare -gi ${opt_name}_tgt
-	}
-	((${#opt_name}>${opt_columns:=0}-3))\
-		&& opt_columns=${#opt_name}+3
-}
-
-add_function_key()
-{
-	[[ $(type -t "$1") != function ]]\
-		&& die
-	local func_name=$1
-	declare -g ${func_name}_str
-	local -n str_ref=$_
-	: "[${func_name/_/ }]"
-	str_ref="${_^^}"
-	GLOBAL_KEYLIST+=("${func_name}")
-}
-
-get_mirrorlist()
-{
-	local -n ref="$1"
-	mkdir "${TMP_DIR}/mirrors"
-	exec {fd_mirrors}<> <(curl -s ${MIRROR_URL})
-	fifo_read_through ${fd_mirrors} "^## Worldwide"
-	fifo_read_through ${fd_mirrors} ''
-	while read -t 0 -u ${fd_mirrors} && read -u ${fd_mirrors}; do
-		case "$REPLY" in
-		'##'*) ref+=("${REPLY#* }");;
-		'#'*) printf "${REPLY#\#}\n" >> "${TMP_DIR}/mirrors/${arr[-1]}";;
+	[[ ${pg_ref} == main_keylist ]] && {
+		: "$(get_wintype ${main_keylist[${pg_idx}]})"
+		case $_ in
+		*'_select')
+			push_window
+			update_pg_info
+			print_pg
+		;;
 		esac
-	done
-	exec {fd_mirrors}>&-
-}
-
-options_init()
-{
-	local opt
-	for opt in {keymap,locale,timezone}; do
-		add_option_key $opt single_select
-	done
-	keymap_src=($(localectl list-keymaps))
-	timezone_src=($(timedatectl list-timezones))
-	IFS=$'\n' read -d '' -a locale_src < "/usr/share/i18n/SUPPORTED"
-	add_option_key mirrors multi_select
-	get_mirrorlist mirrors_src
-	add_option_key hostname validate
-	add_option_key username validate
-	add_option_key block_device single_select
-	for opt in /sys/block/{sd,hd,nvme,mmcblk}*;{
-		: $(($(<"$opt/size")*5120>>30))
-		: "/dev/${opt##*/} "$'\xF7'" ${_:: -1}.${_: -1}Gib"
-		block_device_src+=("$_")
 	}
-# Parse supported locales and format spacing for printing
-  ((lim=SAGITTAL-4))
-}
-
-draw_window() {
-  local y x m n offset horz vert
-  read -d '' y x m n <<< "${win_ctx[attr]//,/ }"
-  ((offset=0))
-  horz=$(echoes '\xCD' $((n-2))); vert="\xBA\x9B$((n-2))C\xBA"
-  # Cursor origin and print top border
-  printf '\x9B%s;%sH\xC9%s\xBB' $y $x $horz
-  # Print vertical borders on every line but first and last
-  for((;offset++<m-2;)){ printf '\x9B%s;%sH%b' $((y+offset)) $x $vert;}
-  # Print bottom border
-  printf '\x9B%s;%sH\xC8%s\xBC' $((y+m-1)) $x $horz
-  # Bring cursor into window, save cursor state
-  printf '\x9B%s;%sH\x1B7' $((y+1)) $((x+1))
-}
-
-get_key() {
-  local -n ref
-  ref=${1}
-  for((;;)){
-    read ${READ_OPTS[@]} -N1 ref
-    # Continue loop if read times out from lack of input
-    (($?>128)) && continue
-    # Handling escape characters
-    [[ ${ref} == $'\x1B' ]] && {
-      read ${READ_OPTS[@]} -N1
-      # Handling CSI (Control Sequence Introducer) sequences ('[' + sequence)
-      [[ "${REPLY}" != "[" ]] && return || read ${READ_OPTS[@]} -N2
-      ref=$'\x9B'${REPLY}
-    }
-    return
-  }
-}
-
-seq_main() {
-  win_ctx_op 'set' "1,1,${LINES},${COLUMNS};setopt_pairs_f;single"
-  draw_window
-  nav_single
-}
-
-seq_select() {
-  local -n w ref
-  local optkey i
-  w=win_ctx
-  [[ ${w[nref]} == PACKAGES ]] && : "PACKAGES_${PACKAGES[$1]}" ||
-    : "${SETOPT_KEYS[$1]}"
-  optkey=$_; ref=$optkey
-  win_ctx_op 'push'
-  # Refer to corresponding arrays and attributes belonging to option key
-  : "2,${SAGITTAL},$((${#ref[@]}<LINES-4?${#ref[@]}+2:LINES-2)),$((SAGITTAL-1))"
-  [[ $optkey =~ ^(MIRRORS|PACKAGES_|EXT4_ADD) ]] && {
-    : "$_;${optkey};multi";} || : "$_;${optkey};single"
-  win_ctx_op 'set' "$_"
-  # If option accepts multiple values, convert string values to indices
-  [[ ${w[pg_type]} == 'multi' && "${setopt_pairs[$optkey]}" != 'unset' ]] && {
-    for((i=-1;++i<${#ref[@]};)){
-      [[ "${setopt_pairs[$optkey]}" =~ ${ref[$i]} ]] && w[idxs]+=",$i"
-    }
-    w[idxs]="${w[idxs]#-1,}"
-  }
-  draw_window
-  nav_${w[pg_type]} && { win_ctx_op 'pop'; return;}
-  [[ ${w[pg_type]} == multi ]] && {
-    # If option supports multiple values, convert indices to string values
-    [[ "${w[idxs]}" == '-1' ]] && setopt_pairs[$optkey]='unset' || {
-      setopt_pairs[$optkey]=''
-      while read; do
-        setopt_pairs[$optkey]+="  ${ref[$REPLY]}"
-      done < <(sort -n <<< "${w[idxs]//,/$'\n'}")
-      setopt_pairs[$optkey]="${setopt_pairs[$optkey]#  }"
-    }
-    [[ $optkey == PACKAGES* ]] && { win_ctx_op 'pop'; return;}
-  }
-  [[ ${w[pg_type]} == single ]] && {
-    : "${ref[${w[idx]}]}"
-    [[ $optkey =~ ^(LOCALE|BLOCK_DEVICE) ]] && : "${_%% *}"
-    setopt_pairs[$optkey]="$_"
-  }
-  setopt_pairs_f[$1]="${SETOPT_KEYS_F[$1]}${setopt_pairs[$optkey]}"
-  win_ctx_op 'pop'
 }
 
 seq_ttin() {
@@ -538,105 +493,78 @@ seq_ttin() {
   }
 }
 
-nav_single() {
-  local -n ref idx offs
-  local key len y x lim n slim
-  ref=${win_ctx[nref]}; idx=win_ctx[idx]; offs=win_ctx[offset]; len=${#ref[@]}
-  read -d '' y x lim n <<< "${win_ctx[attr]//,/ }"
-  ((lim-=2)); ((slim=lim>>1))
-  print_pg
-  for((;;)){
-    get_key key
-    case $key in
-      q|$'\x1B') # ESC
-        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && exit_prompt || return 0
-      ;;
-      $'\x0A') # ENTER
-        [[ ${win_ctx[nref]} == 'PACKAGES' ]] && {
-          local white_sp=$(echoes '\x20' $n)
-          printf '\x9B%s;%sH' $y $x
-          for((i=0;i++<lim+2;)){ printf '\x1B7%s\x1B8\x9BB' "${white_sp}";}
-          seq_select $idx
-          continue
-        }
-        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] || return 1
-        : "${ref[$idx]}"
-        ((${#_}>COLUMNS-8)) && {
-          : "${_::$((COLUMNS-8))}"; : "${_%  *} ...";}
-        printf '  \x9B7m%s\x1B8' "$_"
-        case ${SETOPT_KEYS[$idx]} in
-          ESP_SIZE|*VOLUME_SIZE|*NAME) seq_ttin $idx;;
-          SAVE*) save_config; printf '\xAF \x9B7m[   SAVED   ]\x1B8';;
-          LOAD*)
-            load_config
-            (($?)) && : 'NO SAVEFILE' || : 'SAVE LOADED'
-            printf '\xAF \x9B7m[%s]\x1B8' "$_"
-          ;;
-          GENERATE) generate_scripts;;
-          *) seq_select $idx;;
-        esac
-      ;;
-      k|$'\x9BA') # UP
-        # Ignore 0th index
-        ((!idx)) && continue
-        # If cursor position at top of page, decrement indices and print page
-        # Else, remove highlight on current line before printing subsequent line
-        # printing behaviour handled in fallthrough case statement below
-        ((idx==offs)) && { ((offs--,idx--)); print_pg; continue;} ||
-          : "  ${ref[$((idx--))]},A"
-      ;;&
-      j|$'\x9BB') # DOWN
-        # Ignore last index
-        ((idx+1==len)) && continue
-        # If cursor position at bottom of page, increment indices and print page
-        # Else, remove highlight on current line before printing subsequent line
-        # printing behaviour handled in fallthrough case statement below
-        ((idx+1==offs+lim)) && { ((offs++,idx++)); print_pg; continue;} ||
-          : "  ${ref[$((idx++))]},B"
-      ;&
-      k|$'\x9BA') # UP/DOWN fallthrough
-        [[ ${win_ctx[nref]} == 'setopt_pairs_f' ]] && {
-          ((${#_}>COLUMNS-4)) && {
-            : "${_::$((COLUMNS-6))}${_: -2}"; : "${_%  *} ...${_: -2}";}
-          ((${#ref[$idx]}>COLUMNS-8)) && {
-            : "$_,${ref[$idx]::$((COLUMNS-8))}"
-            : "${_%  *} ..."
-          } || : "$_,${ref[$idx]}" 
-        } || : "$_,${ref[$idx]}"
-        [[ $_ =~ ^(  .*),(.),(.*)$ ]] && {
-          printf '%s\x1B8\x9B%s\x1B7' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
-          printf '\xAF \x9B7m%s\x1B8' "${BASH_REMATCH[3]}"
-        }
-      ;;
-      $'\x02'|$'\x9B5~') # PG_UP/CTRL+B
-        ((offs=offs-lim>0?offs-lim:0)); ((idx=idx-lim>0?idx-lim:0))
-        print_pg
-      ;;
-      $'\x15') # HALF_PG_UP(CTRL+U)
-        ((idx=idx-slim>0?idx-slim:0)); ((idx<offs)) && ((offs=idx))
-        print_pg
-      ;;
-      $'\x06'|$'\x9B6~') # PG_DOWN/CTRL+F
-        ((offs+lim<len-lim)) && ((offs+=lim)) ||
-          ((offs=len>lim?len-lim:0))
-        ((idx=idx+lim<len?idx+lim:len-1))
-        print_pg
-      ;;
-      $'\x04') # HALF_PG_DOWN(CTRL+D)
-        ((idx=idx+slim<len?idx+slim:len-1))
-        ((idx+1>offs+lim)) && ((offs+=(idx-offs-lim+1)))
-        print_pg
-      ;;
-      $'\x9B1~') # HOME
-        offs=0; idx=0
-        print_pg
-      ;;
-      $'\x9B4~') # END
-        ((offs=len>lim?len-lim:0,idx=len-1))
-        print_pg
-      ;;
-    esac
-  }
+loop_ui()
+{
+	local -- key
+	print_pg
+	for((;;)){
+		get_key key
+		case $key in
+		'q' |\
+		$'\x1B') # ESC
+			[[ ${pg_ref} == main_keylist ]]\
+				&& exit_prompt\
+				|| return 0
+		;;
+		$'\x0A') # ENTER
+			handle_event_enter
+		;;
+		'k' |\
+		$'\x9BA') # UP
+			((!pg_idx)) &&
+				continue
+			((pg_idx == pg_off)) && {
+				((pg_off--))
+				((pg_idx--))
+				print_pg
+				continue
+			}
+		;;
+		'j' |\
+		$'\x9BB') # DOWN
+			((pg_idx + 1 == pg_arr_len)) && continue
+			((pg_idx + 1 == pg_off + pg_lines)) && {
+				((pg_off++))
+				((pg_idx++))
+				print_pg
+				continue
+			}
+		;;
+		$'\x02' |\ # CTRL+B
+		$'\x9B5~') # PG_UP
+			pg_off='pg_off - pg_lines > 0 ? pg_off - pg_lines : 0'
+			pg_idx='pg_idx - pg_lines > 0 ? pg_idx - pg_lines : 0'
+		;;&
+		$'\x15') # HALF_PG_UP(CTRL+U)
+			pg_idx='pg_idx - pg_stop > 0 ? pg_idx - pg_stop : 0'
+			((pg_idx < pg_off))\
+				&& pg_off=pg_idx
+		;;&
+		$'\x06' |\ # CTRL+F
+		$'\x9B6~') # PG_DOWN
+			((pg_off + pg_lines < pg_arr_len - pg_lines))\
+				&& pg_off+=pg_lines\
+				|| pg_off='pg_arr_len > pg_lines ? pg_arr_len - pg_lines : 0'
+			pg_idx='pg_idx + pg_lines < pg_arr_len ? pg_idx + pg_lines : pg_arr_len - 1'
+		;;&
+		$'\x04') # HALF_PG_DOWN(CTRL+D)
+			pg_idx='pg_idx + pg_stop < pg_arr_len ? pg_idx + pg_stop : pg_arr_len - 1'
+			((pg_idx + 1 > pg_off + pg_lines))\
+				&& pg_off='pg_idx - pg_lines + 1'
+		;;&
+		$'\x9B1~') # HOME
+			pg_off=0
+			pg_idx=0
+		;;&
+		$'\x9B4~') # END
+			pg_off='pg_arr_len > pg_lines ? pg_arr_len - pg_lines : 0'
+			pg_idx='pg_arr_len - 1'
+		;;&
+		$'\x02'|$'\x04'|$'\x06'|$'\x15'|$'\x9B1~'|$'\x9B4~'|$'\x9B5~'|$'\x9B6~')
+			print_pg
+		;;
+		esac
+	}
 }
 
 nav_multi() {
@@ -717,247 +645,53 @@ nav_multi() {
   }
 }
 
-save_config() {
-  local key white_sp
-  exec {fd_save}>${CACHE_DIR}/options.conf
-  for key in ${SETOPT_KEYS[@]};{
-    [[ $key =~ ^(PACKAGES|.*CONFIG|GENERATE)$ || -z "${setopt_pairs[$key]}" ]] &&
-      continue
-    printf '%s\n' "[$key]" >&$fd_save
-    [[ $key =~ ^(MIRRORS|MOUNT*) ]] && {
-      printf 'list =\n      ' >&$fd_save
-      : "${setopt_pairs[$key]//  /$'\n',}"
-      printf '%s\n\n' "${_//,/      }" >&$fd_save
-    } || printf 'value = %s\n\n' "${setopt_pairs[$key]}" >&$fd_save
-  }
-  printf '[PACKAGES]\n' >&$fd_save
-  for key in ${PACKAGES[@]};{
-    printf '%s\nlist =\n      ' "[.$key]" >&$fd_save
-    : "${setopt_pairs["PACKAGES_$key"]//  /$'\n',}"
-    printf '%s\n\n' "${_//,/      }" >&$fd_save
-  }
-  exec {fd_save}>&-
+save_config()
+{
+	:
 }
 
-load_config() {
-  local key i
-  [[ -a "${CACHE_DIR}/options.conf" ]] || return 1
-  while read; do
-    case $REPLY in
-      '['*) : "${REPLY#[}"; key="${_%]}";;
-      value*) setopt_pairs[$key]=${REPLY#*= };;
-      list*)
-        key=${key/#./PACKAGES_}
-        setopt_pairs[$key]=''
-        while read; do
-          [[ -z $REPLY ]] && break ||
-            setopt_pairs[$key]+="  ${REPLY#"${REPLY%%[![:space:]]*}"}"
-        done
-        setopt_pairs[$key]="${setopt_pairs[$key]#  }"
-      ;;
-    esac
-  done < "${CACHE_DIR}/options.conf"
-  for((i=-1;++i<${#SETOPT_KEYS_F[@]};)){
-    key="${SETOPT_KEYS[$i]}"
-    [[ $key == PACK* ]] && continue
-    [[ $key == *PASS ]] && { setopt_pairs[$key]=''; : 'unset';} ||
-      : "${setopt_pairs[$key]}"
-    setopt_pairs_f[$i]="${SETOPT_KEYS_F[$i]}$_"
-  }
-  print_pg
+load_config()
+{
+	:
 }
 
-setup_partitions() {
-  local -n opt
-  local -a flags
-  opt=setopt_pairs
-  flags=(-v -t ext4 -O casefold,fast_commit)
-  umount -q ${opt[BLOCK_DEVICE]}
-  wipefs -af ${opt[BLOCK_DEVICE]}
-  sgdisk -Zo ${opt[BLOCK_DEVICE]}
-  sgdisk -I -n 1:0:+${opt[ESP_SIZE]%iB} -t 1:EF00 ${opt[BLOCK_DEVICE]}
-  sgdisk -I -n 2:0:0 -t 2:8E00 ${opt[BLOCK_DEVICE]}
-  partprobe ${opt[BLOCK_DEVICE]}
-  mkfs.fat -F 32 "${opt[BLOCK_DEVICE]}p1"
-  [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] && {
-    : "${opt[BLOCK_DEVICE]}p2"
-  } || : "--dataalignment ${opt[EXT4_BLOCK_SIZE]%B} ${opt[BLOCK_DEVICE]}p2"
-  pvcreate $_
-  vgcreate vg0 "${opt[BLOCK_DEVICE]}p2"
-  lvcreate -y -L "${opt[ROOT_VOLUME_SIZE]}%iB" vg0 -n lv0
-  lvcreate -y -L "${opt[HOME_VOLUME_SIZE]}%iB" vg0 -n lv1
-  modprobe dm_mod
-  vgscan
-  vgchange -ay
-  [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] && {
-    mke2fs ${flags[@]} /dev/vg0/lv0
-  } || mke2fs ${flags[@]} -b ${opt[EXT4_BLOCK_SIZE]%B} /dev/vg0/lv0
-  flags+=(-m 0 -T largefile)
-  [[ "${opt[EXT4_BLOCK_SIZE]}" == 'default' ]] ||
-    flags+=(-b ${opt[EXT4_BLOCK_SIZE]%B})
-  mke2fs ${flags[@]} /dev/vg0/lv1
-  [[ "${opt[MOUNT_OPTIONS]}" == 'unset' ]] || {
-    tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" /dev/vg0/lv0
-    tune2fs -E mount_opts="${opt[MOUNT_OPTIONS]//  / }" /dev/vg0/lv1
-  }
-  mount /dev/vg0/lv0 /mnt
-  mount --mkdir ${opt[BLOCK_DEVICE]}p1 /mnt/efi
-  mount --mkdir /dev/vg0/lv1 /mnt/home
+update_pg_info()
+{
+	local -n stack_ref
+	local -- lines cols
+	read -d '' stack_ref _ _ lines cols pg_idx pg_off <<<"${window_stack[-1]//:/ }"
+	pg_ref="${!stack_ref}"
+	pg_arr_len=${#stack_ref[@]}
+	pg_lines='lines - 2'
+	pg_cols='cols - 2'
+	pg_stop='pg_lines>>1'
 }
 
-setup_mirrors() {
-  local i
-  pacman -S pacman-contrib --noconfirm --needed
-  [[ -a "/etc/pacman.d/mirrorlist.bak" ]] ||
-    cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
-  exec {fd_mirror}>${CACHE_DIR}/mirrors
-  while read; do
-    [[ "$REPLY" == '##'* ]] || continue
-    [[ "${setopt_pairs[MIRRORS]}" =~ "${REPLY#* }" ]] && {
-      while read; do
-        [[ -z $REPLY ]] && break
-        printf '%s\n' "${REPLY#\#}" >&$fd_mirror
-      done
-    }
-  done < "${CACHE_DIR}/mirrorlist"
-  exec {fd_mirror}>&-
-  rankmirrors ${CACHE_DIR}/mirrors > /etc/pacman.d/mirrorlist
-}
-
-edit_pacconf() {
-  local stream
-  read -d '' -r stream < /etc/pacman.conf
-  exec {fd_stream}>/etc/pacman.conf
-  while read; do
-    case $REPLY in
-      '#[multilib]') printf '[multilib]\n' >&$fd_stream; read;&
-      '#ParallelDownloads'*) : "${REPLY#\#}";;
-      *) : "$REPLY";;
-    esac
-    printf '%s\n' "$_" >&$fd_stream
-  done <<< "$stream"
-  exec {fd_stream}>&-
-}
-
-strapon() {
-  local -a pkg_base
-  pkg_base=(base base-devel dosfstools e2fsprogs lvm2 pacman-contrib)
-  edit_pacconf
-  while read; do
-    [[ $REPLY == vendor_id* ]] && {
-      [[ $REPLY =~ AMD ]] && : 'amd-ucode' || : 'intel-ucode'
-      pkg_base+=("$_")
-      break
-    } || continue
-  done < /proc/cpuinfo
-  pkg_base+=(${setopt_pairs[KERNEL]} "${setopt_pairs[KERNEL]}-headers")
-  pacstrap -KP /mnt ${pkg_base[@]}
-}
-
-setup_localisation() {
-  local stream
-  printf '%s\n' "${setopt_pairs[HOSTNAME]}" > /mnt/etc/hostname
-  read -d '' -r stream < /mnt/etc/locale.gen
-  exec {fd_stream}>/mnt/etc/locale.gen
-  while read; do
-    : "$REPLY"
-    [[ "$_" == "#${setopt_pairs[LOCALE]} "* ]] && : "${_#\#}"
-    printf '%s\n' "$_" >&$fd_stream
-  done <<< "$stream"
-  exec {fd_stream}>&-
-  printf 'LANG=%s\n' "${setopt_pairs[LOCALE]}" > /mnt/etc/locale.conf
-  printf 'KEYMAP=%s\n' "${setopt_pairs[KEYMAP]}" > /mnt/etc/vconsole.conf
-  #[[ "${setopt_pairs[PACKAGES_TERMINAL]}" =~ terminus-font ]] &&
-    #printf 'FONT=ter-i32b\n' >> /mnt/etc/vconsole.conf
-  printf '127.0.0.1 localhost\n::1 localhost\n' > /mnt/etc/hosts
-  printf '127.0.1.1 %s.localdomain %s\n' $HOSTNAME $HOSTNAME >> /mnt/etc/hosts
-}
-
-setup_chroot() {
-  local stream
-  genfstab -U /mnt >> /mnt/etc/fstab
-  : "ln -sf /usr/share/zoneinfo/${setopt_pairs[TIMEZONE]} /etc/localtime"
-  arch-chroot /mnt /bin/bash -c "${_}; hwclock --systohc; locale-gen"
-  printf '%s\n' "${setopt_pairs[HOSTNAME]}" > /mnt/etc/hostname
-  read -d '' -r stream < /mnt/etc/mkinitcpio.conf
-  exec {fd_stream}>/mnt/etc/mkinitcpio.conf
-  while read; do
-    : "$REPLY"
-    [[ "$_" == HOOKS* ]] && {
-      : "HOOKS=(systemd autodetect microcode modconf keyboard"
-      : "$_ sd-vconsole block lvm2 filesystems fsck)"
-    }
-    printf '%s\n' "$_" >&$fd_stream
-  done <<< "$stream"
-  exec {fd_stream}>&-
-  arch-chroot /mnt mkinitcpio -p ${setopt_pairs[KERNEL]}
-  arch-chroot /mnt bootctl --esp-path=/efi install
-  printf 'root:%s\n' "${setopt_pairs[ROOTPASS]}" > >(arch-chroot /mnt chpasswd)
-  arch-chroot /mnt useradd -m -g users -G wheel ${setopt_pairs[USERNAME]}
-  : "${setopt_pairs[USERNAME]}:${setopt_pairs[USERPASS]}"
-  printf '%s\n' "$_" > >(arch-chroot /mnt chpasswd)
-}
-
-setup_zram() {
-  local size
-  while read; do
-    [[ "$REPLY" == MemTotal* ]] && {
-      : "${REPLY% kB}"; size=${_##* }; size=$(((size>>20)/2))
-      break
-    }
-  done < /proc/meminfo
-  printf 'zram\n' > /mnt/etc/modules-load.d/zram.conf
-  printf 'ACTION=="add", KERNEL=="zram0"' > /mnt/etc/udev/rules.d/99-zram.rules
-  printf ', ATTR{comp_algorithm}="zstd"' >> /mnt/etc/udev/rules.d/99-zram.rules
-  : ", ATTR{disksize}=\"${size}Gib\", RUN=\"/usr/bin/mkswap -U clear /dev/%k\""
-  printf '%s, TAG+="systemd"' "$_" >> /mnt/etc/udev/rules.d/99-zram.rules
-  printf '/dev/zram0 none swap defaults,pri=100 0 0' >> /mnt/etc/fstab
-# TODO: disable zswap
-# add zswap.enabled=0 to kernel params
-#
-}
-
-install_extra_packages() {
-  :
-}
-
-generate_scripts() {
-  local key i
-  local -n opt
-  opt=setopt_pairs
-  exec {fd_log}>"${CACHE_DIR}/setup.log"
-  # Check options
-  for key in {MIRRORS,BLOCK_DEVICE};{
-    [[ ${opt[$key]} == 'unset' ]] && { exit_prompt 'config'; return;}
-  }
-  for key in {ROOTPASS,USERNAME,USERPASS,HOSTNAME};{
-    [[ -z "${opt[$key]}" ]] && { exit_prompt 'config'; return;}
-  }
-  for ((i=0;i<${#BLOCK_DEVICE[@]};i++)){
-    key="${BLOCK_DEVICE[$i]}"
-    [[ "$key" == "${opt[BLOCK_DEVICE]}"* ]] && {
-      ((i=${opt[ROOT_VOLUME_SIZE]%GiB})); ((i+=${opt[HOME_VOLUME_SIZE]%GiB}))
-      : "${key##* }"; : "${_%.*}"
-      (($_<i)) && { exit_prompt 'config'; return;} || break
-    }
-  }
-  setup_partitions >&$fd_log 2>&1
-  setup_mirrors >&$fd_log 2>&1
-  strapon
-  setup_localisation
-  setup_chroot
-  exec {fd_log}>&-
-  exit 0
+wipe_window()
+{
+	local blanks y x lines columns
+	read -d '' _ y x lines columns _ _ <<< "${WINDOW_STACK[-1]//:/ }"
+	((lines-=2))
+	((columns-=2))
+	printf -v blanks '%*s' $((lines > columns ? lines : columns)) ''
+	: "${blanks::$lines}"
+	: "${_// /$'\x1B7'${blanks::$columns}$'\x1B8\x9BA'}"
+	printf '\x9B%s;%sH%s\x1B8' $((y + lines)) $((x + 1)) "$_"
 }
 
 main()
 {
+	declare -ga window_stack main_keylist main_keylist_strs
+	declare -gi pg_arr_len pg_lines pg_cols pg_stop pg_idx pg_off opt_pad
+	declare -g main_keylist_wintype pg_ref
+	shopt -s nullglob
 	trap 'cleanup' EXIT
 	trap 'get_console_size; draw_window' SIGWINCH
 	trap 'exit_prompt' SIGINT
-	shopt -s nullglob
-	set_console
-	options_init 
-	seq_main
+	setup_console
+	setup_references
+	get_console_size
+	push_window main_keylist
+	loop_ui
 }
 main "$@"

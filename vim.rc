@@ -116,23 +116,25 @@ cnoremap <C-P> <Up>
 cnoremap <M-B> <S-Left>
 cnoremap <M-F> <S-Right>
 "   Highlight
-nnoremap <Leader><Leader> :noh<CR>
-"   Quiting
-nnoremap <Leader>htn :w<CR>
-nnoremap <Leader>tns :q<CR>
-nnoremap <Leader>snth :wq<CR>
-nnoremap <Leader>ueo :qa<CR>
+nnoremap <Leader>n :noh<CR>
+"   Writes and Quits
+nnoremap <Leader>w :w<CR>
+nnoremap <Leader>q :q<CR>
 "   Pasting
 xnoremap <Leader>p "_dP
 "   Autoclose
 inoremap () ()<LEFT>
 inoremap {} {}<LEFT>
 inoremap [] []<LEFT>
+inoremap <lt>> <lt>><LEFT>
 inoremap "" ""<LEFT>
 inoremap '' ''<LEFT>
 inoremap (<LEADER> ()
 inoremap {<LEADER> {}
 inoremap [<LEADER> []
+inoremap <lt><LEADER> <lt>>
+inoremap "<LEADER> ""
+inoremap '<LEADER> ''
 inoremap {<CR> {<CR><CR>}<UP><TAB>
 
 set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r
