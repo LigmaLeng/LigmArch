@@ -23,16 +23,16 @@ set incsearch
 set hlsearch
 set ignorecase
 set smartcase
-set scrolloff=5
 "   Drawing
 set lazyredraw
 set ttyfast
 "   Window
 set nowrap
+set scrolloff=5
+set sidescroll=1
 set splitkeep="screen"
 set splitright
 set winminheight=0
-set scrolloff=5
 set foldmethod=manual
 "   Gutter
 set laststatus=2
@@ -93,10 +93,12 @@ execute "set <M-N>=\en"
 execute "set <M-P>=\ep"
 execute "set <M-B>=\eb"
 execute "set <M-F>=\ef"
+execute "set <M-D>=\ed"
 "   Emacs-style insert mode
 inoremap <C-A> <Home>
 inoremap <C-B> <Left>
 inoremap <C-D> <Del>
+inoremap <M-D> <C-O>de
 inoremap <C-E> <End>
 inoremap <C-F> <Right>
 inoremap <M-B> <S-Left>

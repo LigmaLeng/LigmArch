@@ -33,18 +33,46 @@
 #        rdma-core
 # 
 
-declare -x LANG=C
-declare -x LC_ALL=C
-declare -i LINES COLUMNS TRANSVERSE SAGITTAL
-READ_OPTS=(-rs -t 0.03)
-TMP_DIR=$(mktemp -d)
-CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}/ligmarch"
-[[ -d $CACHE_DIR ]]\
-	|| mkdir -p $CACHE_DIR
+export LANG=C
+export LC_ALL=C
+shopt -s globstar nullglob
+readonly LIG_TMPDIR=$(mktemp -d)
+readonly LIG_CACHE="${XDG_CACHE_HOME:=${HOME}/.cache}/ligmarch"
+readonly LIG_OPT=(keymap locale timezone mirrors device {host,user}name packages save install)
+readonly MIRRORGEN_URL="https://archlinux.org/mirrorlist/"
+mkdir -p ${LIG_CACHE}
+cd ${LIG_TMPDIR}
 [[ ${0%/*} == ${0} ]]\
-	&& CTX_DIR='.'\
-	|| CTX_DIR=${0%/*}
-MIRROR_URL="https://archlinux.org/mirrorlist/all/https/"
+	&& readonly LIG_SRCDIR=${OLDPWD}\
+	|| readonly LIG_SRCDIR=${0%/*}
+
+main()
+{
+	trap 'cleanup' EXIT
+	trap 'get_console_size; draw_window' SIGWINCH
+	#trap 'exit_prompt' SIGINT
+	setup_console
+	setup_console
+	for opt in "${LIG_OPT[@]}";{
+		case $opt in
+		save|install) :;;
+		*) mkdir $opt;;&
+		#mirrors)
+			#fetch_mirrorlist > ./mirrors/page_file;;
+		packages)
+			process_config;;
+		keymap)
+			localectl list-keymaps > ./keymap/page_file;;
+		locale)
+			localectl list-locales > ./locale/page_file;;
+		timezone)
+			timedatectl list-timezones > ./timezone/page_file;;
+		device)
+			fetch_devices > ./device/page_file;;
+		esac
+	}
+	get_console_size
+}
 
 add_function_key()
 {
@@ -88,9 +116,10 @@ cleanup()
 	printf '\x9B%s' m 2J r ?25h ?7h
 	# Return character set back to UTF-8
 	printf '\x1B%%G'
-	[[ -a "${TMP_DIR}/stty.bak" ]]\
-		&& stty $(<"${TMP_DIR}/stty.bak")
-	rm -rf "${TMP_DIR}"
+	[[ -a "${LIG_TMPDIR}/.stty" ]]\
+		&& stty $(<"${LIG_TMPDIR}/.stty")
+	[[ -d "${LIG_TMPDIR}" ]]\
+		&& rm -rf "${LIG_TMPDIR}"
 }
 
 die()
@@ -149,7 +178,8 @@ echoes()
 	for ((i=0;i++<$2;)){ printf '%s' "$1";}
 }
 
-exit_prompt() {
+exit_prompt()
+{
   local exit_query exit_opts
   [[ ${FUNCNAME[1]} == 'exit_prompt' ]] && return
   exit_query='Abort setup process'; exit_opts=('(Y|y)es' '(N|n)o')
@@ -182,17 +212,77 @@ exit_prompt() {
 fifo_read_through()
 {
 	[[ -p "/proc/self/fd/${1:-'0'}" ]]\
-		|| die 'EINVAL: not named pipe'
-	[[ -z "${2:-}" ]] && {
-		while read -u $1; do
-			[[ -z "$REPLY" ]] && break
-		done
-	} || {
-		while read -u $1; do
-			[[ "$REPLY" =~ $2 ]] && break
-		done
+		|| die 'Bad file descriptor'
+	[[ -z "${2:-}" ]]\
+		&& while read -u $1; do [[ -z "$REPLY" ]] && break; done\
+		|| while read -u $1; do [[ "$REPLY" =~ $2 ]] && break; done
+}
+
+cache_country_codes()
+{
+	exec {dom_stream}<> <(curl -s "${MIRRORGEN_URL}")
+	fifo_read_through ${dom_stream} "<select.*id=\"id_country\""
+	fifo_read_through ${dom_stream} "<option.*value=\"all\""
+	while read -u ${dom_stream} && [[ "${REPLY:-}" != *'</select>'* ]]; do
+		[[ "$REPLY" =~ 'value="'(.*)'">'(.*)'<' ]]\
+			|| continue
+		# Quirk for literally the only multibyte char
+		[[ ${BASH_REMATCH[1]} == TR ]]\
+			&& printf 'TR Turkey\n'\
+			|| printf '%s %s\n' "${BASH_REMATCH[@]:1:2}"
+	done > "${LIG_CACHE}/country_codes"
+	exec {dom_stream}>&-
+}
+
+fetch_mirrorlist()
+{
+	[[ -f "${LIG_CACHE}/country_codes" ]]\
+		|| cache_country_codes &
+	exec {dump_stream}<> <(curl -s "${MIRRORGEN_URL}all/https/")
+	fifo_read_through ${dump_stream} "^## Worldwide"
+	while read -t 0 -u ${dump_stream} && read -u ${dump_stream}; do
+		[[ "$REPLY" != '##'* ]]\
+			&& continue
+		[[ "${REPLY#* }" == T$'\xC3\xBC'rkiye ]]\
+			&& printf 'Turkey'\
+			|| printf '%s\n' "${REPLY#* }"
+	done
+	exec {dump_stream}>&-
+}
+
+fetch_devices()
+{
+	for dev in /sys/block/{sd,hd,nvme,mmcblk}*;{
+		printf '/dev/%s \xF7 ' ${dev##*/}
+		: $(($(<"$dev/size") * 5120>>30))
+		printf '%s.%cGib\n' ${_:: -1} ${_: -1}
 	}
 }
+
+process_config()
+{
+	local -l optkey
+	local -- optvals filename
+	local -- opt_cond=" ${LIG_OPT[*]::$(( ${#LIG_OPT[@]} - 3 ))} "
+	if [[ -f "${LIG_CACHE}/options.conf" ]]; then : "${LIG_CACHE}/options.conf"
+	elif [[ -f "${LIG_SRCDIR}/options.conf" ]]; then : "${LIG_SRCDIR}/options.conf"
+	else return; fi; filename="$_"
+	while read optkey; do case "$optkey" in
+	'[options]')
+		while IFS=$' \t\n=' read optkey optvals && [[ -n "$optkey" ]]; do
+			[[ "${opt_cond}" =~ " $optkey " ]]\
+				|| die "Bad config key: $optkey"
+			:
+		done;;
+	'[mirrors]')
+		:
+		;;
+	'[packages]')
+		:
+		;;
+	esac; done < "$filename"
+}
+
 
 get_console_size()
 {
@@ -202,7 +292,7 @@ get_console_size()
 	((${#window_stack[@]})) && {
 		: "${window_stack[0]%:*:*}"
 		window_stack[0]="main_keylist:1:1:${window_stack[0]/$_/$LINES:$COLUMNS}"
-		for ((i=0;++i<${#window_stack[@]};));{
+		for ((i=0;++i<${#window_stack[@]};));{ :;}
 	}
 }
 
@@ -229,14 +319,14 @@ get_key()
 get_mirrorlist()
 {
 	local -n ref="$1"
-	mkdir "${TMP_DIR}/mirrors"
+	mkdir "${LIG_TMPDIR}/mirrors"
 	exec {fd_mirrors}<> <(curl -s ${MIRROR_URL})
 	fifo_read_through ${fd_mirrors} "^## Worldwide"
 	fifo_read_through ${fd_mirrors} ''
 	while read -t 0 -u ${fd_mirrors} && read -u ${fd_mirrors}; do
 		case "$REPLY" in
 		'##'*) ref+=("${REPLY#* }");;
-		'#'*) printf "${REPLY#\#}\n" >> "${TMP_DIR}/mirrors/${arr[-1]}";;
+		'#'*) printf "${REPLY#\#}\n" >> "${LIG_TMPDIR}/mirrors/${arr[-1]}";;
 		esac
 	done
 	exec {fd_mirrors}>&-
@@ -323,10 +413,10 @@ push_window()
 
 setup_console()
 {
-	stty -g > "${TMP_DIR}/stty.bak"
+	stty -g > "${LIG_TMPDIR}/.stty"
 	stty -echo -icanon -ixon isig susp undef
-	# Select default (single byte character set) and lock G0 and G1 charsets
-	printf '\x1B%s' '%@' '(K' ')K'
+	# Select default (single byte character set)
+	printf '\x1B%s' '%@'
 	# 2J    Clear screen
 	# 31m   Foreground red
 	# ?25l  Hide cursor
@@ -679,19 +769,4 @@ wipe_window()
 	printf '\x9B%s;%sH%s\x1B8' $((y + lines)) $((x + 1)) "$_"
 }
 
-main()
-{
-	declare -ga window_stack main_keylist main_keylist_strs
-	declare -gi pg_arr_len pg_lines pg_cols pg_stop pg_idx pg_off opt_pad
-	declare -g main_keylist_wintype pg_ref
-	shopt -s nullglob
-	trap 'cleanup' EXIT
-	trap 'get_console_size; draw_window' SIGWINCH
-	trap 'exit_prompt' SIGINT
-	setup_console
-	setup_references
-	get_console_size
-	push_window main_keylist
-	loop_ui
-}
 main "$@"
