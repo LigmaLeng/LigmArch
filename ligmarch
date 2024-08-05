@@ -33,102 +33,48 @@
 #        rdma-core
 # 
 
+shopt -s nullglob
 export LANG=C
 export LC_ALL=C
-shopt -s globstar nullglob
-readonly LIG_TMPDIR=$(mktemp -d)
-readonly LIG_CACHE="${XDG_CACHE_HOME:=${HOME}/.cache}/ligmarch"
-readonly LIG_OPT=(keymap locale timezone mirrors device {host,user}name packages save install)
+readonly CACHE_DIR="${XDG_CACHE_HOME:=${HOME}/.cache}/ligmarch"
 readonly MIRRORGEN_URL="https://archlinux.org/mirrorlist/"
-mkdir -p ${LIG_CACHE}
-cd ${LIG_TMPDIR}
-[[ ${0%/*} == ${0} ]]\
-	&& readonly LIG_SRCDIR=${OLDPWD}\
-	|| readonly LIG_SRCDIR=${0%/*}
+declare -A {simple,multi,nested,form}_set
+declare -a opt_tree_root window_stack
+mkdir -p ${CACHE_DIR}
+#readonly LIG_TMPDIR=$(mktemp -d)
+#cd ${LIG_TMPDIR}
+#LIG_OPT=(keymap locale timezone mirrors device {host,user}name packages save install)
+#[[ ${0%/*} == ${0} ]]\
+#&& readonly LIG_SRCDIR=${OLDPWD}\
+#|| readonly LIG_SRCDIR=${0%/*}
 
-main()
-{
-	trap 'cleanup' EXIT
-	trap 'get_console_size; draw_window' SIGWINCH
-	#trap 'exit_prompt' SIGINT
-	setup_console
-	setup_console
-	for opt in "${LIG_OPT[@]}";{
-		case $opt in
-		save|install) :;;
-		*) mkdir $opt;;&
-		#mirrors)
-			#fetch_mirrorlist > ./mirrors/page_file;;
-		packages)
-			process_config;;
-		keymap)
-			localectl list-keymaps > ./keymap/page_file;;
-		locale)
-			localectl list-locales > ./locale/page_file;;
-		timezone)
-			timedatectl list-timezones > ./timezone/page_file;;
-		device)
-			fetch_devices > ./device/page_file;;
-		esac
-	}
-	get_console_size
+nap() {
+  ((fd_nap)) || exec {fd_nap}<> <(:)
+  read -t ${1:-0.1} -u $fd_nap || :
 }
 
-add_function_key()
-{
-	local func_name=$1
-	[[ $(type -t "${func_name}") == function ]]\
-		|| die
-	: "[${func_name/_/ }]"
-	main_keylist_strs+="${_^^}"
-	main_keylist+=("${func_name}")
+setty() {
+  stty_prev=$(stty -g)
+  stty -echo -icanon -ixon isig susp undef
+  printf '\x1B)U\x1B(K\x0E\x9B?25;7l\x9B31m'
 }
 
-add_option_key()
-{
-	[[ $2 =~ ^((single|nested|multi)_select|form)$ ]]\
-		|| die
-	local opt_name="$1"
-	local -n wintype=${opt_name}_wintype
-	declare -g ${!wintype}
-	wintype="$2"
-	[[ ${wintype} == form ]] && {
-		declare -g ${opt_name}_tgt
-	} || {
-		declare -ga ${opt_name}_strs
-		[[ ${wintype} == multi ]]\
-			&& declare -ga ${opt_name}_tgt\
-			|| declare -gi ${opt_name}_tgt
-	}
-	((${#opt_name}>${opt_pad:=0}-3))\
-		&& opt_pad=${#opt_name}+3
-	main_keylist+=("${opt_name}")
-	main_keylist_strs+=("${opt_name^^}")
+resetty() { printf '\x9B2J\x9Bm\x9B?25;7h\x1B)K\x0F'; stty "$stty_prev";}
+
+die() {
+  trap - EXIT
+  resetty
+  : "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${FUNCNAME[1]}: ${1:-Died}"
+  printf '%s\n' "$_" >&2
+  exit 1
 }
 
-cleanup()
-{
-	# m     Reset Colours 
-	# r     Reset scrolling region
-	# 2J    Clear screen
-	# ?25h  Show cursor
-	# ?7h   Enable line wrapping
-	printf '\x9B%s' m 2J r ?25h ?7h
-	# Return character set back to UTF-8
-	printf '\x1B%%G'
-	[[ -a "${LIG_TMPDIR}/.stty" ]]\
-		&& stty $(<"${LIG_TMPDIR}/.stty")
-	[[ -d "${LIG_TMPDIR}" ]]\
-		&& rm -rf "${LIG_TMPDIR}"
-}
+add_to_set() { [[ $(type -t "$2") == function ]] || declare -g "$1_set[$2]"=1;}
 
-die()
-{
-	trap - EXIT
-	cleanup
-	: "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${FUNCNAME[1]}: ${1:-Died}"
-	printf '%s\n' "$_" >&2
-	exit 1
+add_option() {
+  add_to_set "$@"
+  opt_tree_root+=("$2")
+  [[ "$1" == simple || "$1" == multi ]] && IFS=$'\n' read -d '' -a "$2"
 }
 
 display_cleave() {
@@ -159,23 +105,17 @@ display_cleave() {
 
 draw_window()
 {
-	local blanks y x lines columns
-	read -d '' _ y x lines columns _ _ <<< "${WINDOW_STACK[-1]//:/ }"
-	printf -v blanks '%*s' $((lines > columns ? lines : columns)) ''
-	: "${blanks::$((columns - 2))}"
+	local y=$1 x=$2 m=$3 n=$4 blanks=
+	printf -v blanks '%*s' $((m > n ? m : n)) ''
+	: "${blanks::$((n - 2))}"
 	: "${_// /$'\xCD'}"
 	# Position cursor, print top and bottom borders
 	printf '\x9B%s;%sH\xC9%s\xBB' $y $x "$_"
-	printf '\x9B%s;%sH\x1B7\xC8%s\xBC\x1B8\x9BA' $((y + lines - 1)) $x "$_"
+	printf '\x9B%s;%sH\x1B7\xC8%s\xBC\x1B8\x9BA' $((y + m - 1)) $x "$_"
 	# Print vertical borders, bring cursor into window, save cursor state
-	: "${blanks::$((lines - 2))}"
-	: "${_// /$'\x1B7\xBA'${blanks::$((columns - 2))}$'\xBA\x1B8\x9BA'}"
+	: "${blanks::$((m - 2))}"
+	: "${_// /$'\x1B7\xBA'${blanks::$((n - 2))}$'\xBA\x1B8\x9BA'}"
 	printf '%s\x1B8\x9BC\x1B7' "$_"
-}
-
-echoes()
-{
-	for ((i=0;i++<$2;)){ printf '%s' "$1";}
 }
 
 exit_prompt()
@@ -209,81 +149,6 @@ exit_prompt()
   win_ctx_op 'pop'
 }
 
-fifo_read_through()
-{
-	[[ -p "/proc/self/fd/${1:-'0'}" ]]\
-		|| die 'Bad file descriptor'
-	[[ -z "${2:-}" ]]\
-		&& while read -u $1; do [[ -z "$REPLY" ]] && break; done\
-		|| while read -u $1; do [[ "$REPLY" =~ $2 ]] && break; done
-}
-
-cache_country_codes()
-{
-	exec {dom_stream}<> <(curl -s "${MIRRORGEN_URL}")
-	fifo_read_through ${dom_stream} "<select.*id=\"id_country\""
-	fifo_read_through ${dom_stream} "<option.*value=\"all\""
-	while read -u ${dom_stream} && [[ "${REPLY:-}" != *'</select>'* ]]; do
-		[[ "$REPLY" =~ 'value="'(.*)'">'(.*)'<' ]]\
-			|| continue
-		# Quirk for literally the only multibyte char
-		[[ ${BASH_REMATCH[1]} == TR ]]\
-			&& printf 'TR Turkey\n'\
-			|| printf '%s %s\n' "${BASH_REMATCH[@]:1:2}"
-	done > "${LIG_CACHE}/country_codes"
-	exec {dom_stream}>&-
-}
-
-fetch_mirrorlist()
-{
-	[[ -f "${LIG_CACHE}/country_codes" ]]\
-		|| cache_country_codes &
-	exec {dump_stream}<> <(curl -s "${MIRRORGEN_URL}all/https/")
-	fifo_read_through ${dump_stream} "^## Worldwide"
-	while read -t 0 -u ${dump_stream} && read -u ${dump_stream}; do
-		[[ "$REPLY" != '##'* ]]\
-			&& continue
-		[[ "${REPLY#* }" == T$'\xC3\xBC'rkiye ]]\
-			&& printf 'Turkey'\
-			|| printf '%s\n' "${REPLY#* }"
-	done
-	exec {dump_stream}>&-
-}
-
-fetch_devices()
-{
-	for dev in /sys/block/{sd,hd,nvme,mmcblk}*;{
-		printf '/dev/%s \xF7 ' ${dev##*/}
-		: $(($(<"$dev/size") * 5120>>30))
-		printf '%s.%cGib\n' ${_:: -1} ${_: -1}
-	}
-}
-
-process_config()
-{
-	local -l optkey
-	local -- optvals filename
-	local -- opt_cond=" ${LIG_OPT[*]::$(( ${#LIG_OPT[@]} - 3 ))} "
-	if [[ -f "${LIG_CACHE}/options.conf" ]]; then : "${LIG_CACHE}/options.conf"
-	elif [[ -f "${LIG_SRCDIR}/options.conf" ]]; then : "${LIG_SRCDIR}/options.conf"
-	else return; fi; filename="$_"
-	while read optkey; do case "$optkey" in
-	'[options]')
-		while IFS=$' \t\n=' read optkey optvals && [[ -n "$optkey" ]]; do
-			[[ "${opt_cond}" =~ " $optkey " ]]\
-				|| die "Bad config key: $optkey"
-			:
-		done;;
-	'[mirrors]')
-		:
-		;;
-	'[packages]')
-		:
-		;;
-	esac; done < "$filename"
-}
-
-
 get_console_size()
 {
 	((OPT_TEST)) || read -r LINES COLUMNS < <(stty size)
@@ -314,47 +179,6 @@ get_key()
 		}
 		return
 	}
-}
-
-get_mirrorlist()
-{
-	local -n ref="$1"
-	mkdir "${LIG_TMPDIR}/mirrors"
-	exec {fd_mirrors}<> <(curl -s ${MIRROR_URL})
-	fifo_read_through ${fd_mirrors} "^## Worldwide"
-	fifo_read_through ${fd_mirrors} ''
-	while read -t 0 -u ${fd_mirrors} && read -u ${fd_mirrors}; do
-		case "$REPLY" in
-		'##'*) ref+=("${REPLY#* }");;
-		'#'*) printf "${REPLY#\#}\n" >> "${LIG_TMPDIR}/mirrors/${arr[-1]}";;
-		esac
-	done
-	exec {fd_mirrors}>&-
-}
-
-get_wintype()
-{
-	[[ $(type -t "${1:?}") == function ]] && {
-		printf %s 'function'
-	} || {
-		local -n ref="${1}_wintype"
-		[[ -v "${!ref}" ]]\
-			&& printf %s "$ref"\
-			|| die
-	}
-}
-
-install()
-{
-	:
-}
-
-nap()
-{
-	[[ -n "${fd_nap:-}" ]]\
-		|| exec {fd_nap}<> <(:)
-	read -t ${1:-0.001} -u ${fd_nap}\
-		|| :
 }
 
 print_pg()
@@ -409,47 +233,6 @@ push_window()
 	}
 	update_pg_info
 	draw_window
-}
-
-setup_console()
-{
-	stty -g > "${LIG_TMPDIR}/.stty"
-	stty -echo -icanon -ixon isig susp undef
-	# Select default (single byte character set)
-	printf '\x1B%s' '%@'
-	# 2J    Clear screen
-	# 31m   Foreground red
-	# ?25l  Hide cursor
-	# ?7l   Disable line wrapping
-	printf '\x9B%s' 2J 31m ?25l ?7l
-}
-
-setup_references()
-{
-	local opt
-	for opt in keymap locale timezone;{
-		add_option_key $opt single_select
-	}
-	add_option_key mirrors multi_select
-	add_option_key hostname form
-	add_option_key username form
-	add_option_key block_device single_select
-	main_keylist_wintype=single_select
-	keymap_strs=($(localectl list-keymaps))
-	timezone_strs=($(timedatectl list-timezones))
-	IFS=$'\n' read -d '' -a locale_strs < "/usr/share/i18n/SUPPORTED"
-	get_mirrorlist mirrors_strs
-	for opt in /sys/block/{sd,hd,nvme,mmcblk}*;{
-		: $(($(<"$opt/size") * 5120>>30))
-		: "/dev/${opt##*/} "$'\xF7'" ${_:: -1}.${_: -1}Gib"
-		block_device_strs+=("$_")
-	}
-	for ((i=-1;++i<${#main_keylist_strs[@]};));{
-		printf -v main_keylist_strs[$i] '%-*sunset' $opt_pad ${main_keylist_strs[$i]}
-	}
-	add_function_key save_config
-	add_function_key load_config
-	add_function_key install
 }
 
 test_size() {
@@ -620,8 +403,8 @@ loop_ui()
 				continue
 			}
 		;;
-		$'\x02' |\ # CTRL+B
-		$'\x9B5~') # PG_UP
+    #  ^B   |  PG_UP
+		$'\x02' |  $'\x9B5~')
 			pg_off='pg_off - pg_lines > 0 ? pg_off - pg_lines : 0'
 			pg_idx='pg_idx - pg_lines > 0 ? pg_idx - pg_lines : 0'
 		;;&
@@ -630,8 +413,8 @@ loop_ui()
 			((pg_idx < pg_off))\
 				&& pg_off=pg_idx
 		;;&
-		$'\x06' |\ # CTRL+F
-		$'\x9B6~') # PG_DOWN
+    #  ^F   | PG_DOWN
+		$'\x06' | $'\x9B6~') 
 			((pg_off + pg_lines < pg_arr_len - pg_lines))\
 				&& pg_off+=pg_lines\
 				|| pg_off='pg_arr_len > pg_lines ? pg_arr_len - pg_lines : 0'
@@ -735,28 +518,6 @@ nav_multi() {
   }
 }
 
-save_config()
-{
-	:
-}
-
-load_config()
-{
-	:
-}
-
-update_pg_info()
-{
-	local -n stack_ref
-	local -- lines cols
-	read -d '' stack_ref _ _ lines cols pg_idx pg_off <<<"${window_stack[-1]//:/ }"
-	pg_ref="${!stack_ref}"
-	pg_arr_len=${#stack_ref[@]}
-	pg_lines='lines - 2'
-	pg_cols='cols - 2'
-	pg_stop='pg_lines>>1'
-}
-
 wipe_window()
 {
 	local blanks y x lines columns
@@ -769,4 +530,145 @@ wipe_window()
 	printf '\x9B%s;%sH%s\x1B8' $((y + lines)) $((x + 1)) "$_"
 }
 
-main "$@"
+
+cache_country_codes() {
+  exec {html}<> <(curl -s "${MIRRORGEN_URL}")
+  until [[ "$REPLY" =~ \<select.*country.*\> ]]; do read -u ${html}; done
+	while read -u ${html}; do # Write to file and Handle quirks for multibyte chars
+		[[ "$REPLY" == *\</select\>* ]] && break
+		[[ "$REPLY" =~ ([A-Z]{2}).*\>(.*)\< ]] || continue
+    case "${BASH_REMATCH[1]}" in
+      TR) : 'TR Turkey';;
+      RE) : 'RE Reunion Island';;
+      *) : "${BASH_REMATCH[*]:1}";;
+    esac
+    printf '%s\n' "$_"
+	done > "${CACHE_DIR}/country_codes"
+  exec {html}>&-
+}
+
+fetch_mirrorlist() {
+  [[ -f "${cachedir}/country_codes" ]] || cache_country_codes &
+  exec {dump_stream}<> <(curl -s "${MIRRORGEN_URL}all/https/")
+  until [[ "$REPLY" =~ ^'## Worldwide' ]]; do read -u ${dump_stream}; done
+  while read -t 0 -u ${dump_stream} && read -u ${dump_stream}; do
+    [[ "$REPLY" != '##'* ]] && continue || : "${REPLY#* }"
+    [[ "$_" == T$'\xC3\xBC'rkiye ]] && : "Turkey"
+    printf '%s\n' "$_"
+  done
+  exec {dump_stream}>&-
+}
+
+fetch_devices() {
+  for dev in /sys/block/{sd,hd,nvme,mmcblk}*;{
+    printf '/dev/%s \xF7 ' ${dev##*/}
+    : $(($(<"$dev/size") * 5120>>30))
+    printf '%s.%cGib\n' ${_:: -1} ${_: -1}
+  }
+}
+
+process_config()
+{
+	local -l optkey
+	local -- optvals filename
+	local -- opt_cond=" ${LIG_OPT[*]::$(( ${#LIG_OPT[@]} - 3 ))} "
+	if [[ -f "${cachedir}/options.conf" ]]; then : "${cachedir}/options.conf"
+	elif [[ -f "${LIG_SRCDIR}/options.conf" ]]; then : "${LIG_SRCDIR}/options.conf"
+	else return; fi; filename="$_"
+	while read optkey; do case "$optkey" in
+	'[options]')
+		while IFS=$' \t\n=' read optkey optvals && [[ -n "$optkey" ]]; do
+			[[ "${opt_cond}" =~ " $optkey " ]]\
+				|| die "Bad config key: $optkey"
+		done;;
+	'[mirrors]')
+		:
+		;;
+	'[packages]')
+		:
+		;;
+	esac; done < "$filename"
+}
+
+ligmarch()
+{
+  trap "" EXIT
+	exit
+	for opt in "${LIG_OPT[@]}";{
+		case $opt in
+		save|install) :;;
+		*) mkdir $opt;;&
+		#mirrors)
+			#fetch_mirrorlist > ./mirrors/page_file;;
+		packages)
+			process_config;;
+		keymap)
+			localectl list-keymaps > ./keymap/page_file;;
+		locale)
+			localectl list-locales > ./locale/page_file;;
+		timezone)
+			timedatectl list-timezones > ./timezone/page_file;;
+		device)
+			fetch_devices > ./device/page_file;;
+		esac
+	}
+}
+
+usage()
+{
+	read -d '' <<-EOF
+	Usage: bash ${0##*/} [options]
+
+	  Options:
+	  -c <config>    Use an alternate config for pre-loading options
+	  -a             Restrict drawing characters to ASCII (meant for display bugs)
+
+	  -h             Print this help message
+	EOF
+	printf %s "$REPLY"
+}
+
+#[[ -z $1 || $1 == '-h' ]];{
+#	echo $0
+#	usage
+#	exit
+#}
+#while getopts ':c:ah' flag; do
+#	case $flag in
+#	c) lig_config=$OPTARG;;
+#	a) :;;
+#	h) usage; exit;;
+#	:) die 'option requires an argument';;
+#	?) die 'invalid option';;
+#  esac
+#done
+
+
+align::left() {
+  local -i width=${1:?}
+  local -- str=${2:?}
+  local -i len=$((${#str} > width ? width : ${#str}))
+  local -i pad_right=$((width - len))
+  printf '%s%*s' "${str:0:len}" $pad_right ''
+}
+align::right() {
+  local -i width=${1:?}
+  local -- str=${2:?}
+  local -i len=$((${#str} > width ? width : ${#str}))
+  local -i offs=$((${#str} - len))
+  local -i pad_left=$((width - len))
+  printf '%*s%s' $pad_left '' "${str:offs:len}"
+}
+align::center() {
+  local -i width=${1:?}
+  local -- str=${2:?}
+  local -i len=$((${#str} > width ? width : ${#str}))
+  local -i offs=$(((${#str} - len) / 2))
+  local -i pad_left=$(((width - len) / 2))
+  local -i pad_right=$((width - len - pad_left))
+  printf '%*s%s%*s' $pad_left '' "${str:offs:len}" $pad_right ''
+}
+
+fetch_mirrorlist
+
+# vim: et ts=2 sw=2 ft=sh:

@@ -8,7 +8,6 @@ set shiftwidth=8
 set tabstop=8
 set autoindent
 set smartindent
-set noexpandtab
 set backspace=indent,eol,start
 
 
@@ -140,3 +139,4 @@ inoremap '<LEADER> ''
 inoremap {<CR> {<CR><CR>}<UP><TAB>
 
 set statusline=\ %Y[%M]\ Idx[\%l,\ %c\]\ =\ 0x%B%=\ %F\ %r
+set modeline

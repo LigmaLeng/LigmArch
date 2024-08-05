@@ -35,7 +35,7 @@ setlocal dictionary=
 setlocal nodiff
 setlocal equalprg=
 setlocal errorformat=
-setlocal noexpandtab
+setlocal expandtab
 if &filetype != 'sh'
 setlocal filetype=sh
 endif
@@ -74,7 +74,7 @@ setlocal listchars=
 setlocal makeencoding=
 setlocal makeprg=
 setlocal matchpairs=(:),{:},[:],<:>
-setlocal nomodeline
+setlocal modeline
 setlocal modifiable
 setlocal nrformats=bin,octal,hex
 setlocal number
@@ -90,7 +90,7 @@ setlocal norightleft
 setlocal rightleftcmd=search
 setlocal noscrollbind
 setlocal scrolloff=-1
-setlocal shiftwidth=8
+setlocal shiftwidth=2
 setlocal noshortname
 setlocal showbreak=
 setlocal sidescrolloff=-1
@@ -110,7 +110,7 @@ setlocal synmaxcol=3000
 if &syntax != 'sh'
 setlocal syntax=sh
 endif
-setlocal tabstop=8
+setlocal tabstop=2
 setlocal tagcase=
 setlocal tagfunc=
 setlocal tags=
@@ -133,49 +133,41 @@ setlocal nowrap
 setlocal wrapmargin=0
 silent! normal! zE
 1,35fold
-36,48fold
-49,76fold
-77,86fold
-87,108fold
-109,124fold
-125,133fold
-134,159fold
-160,175fold
-176,180fold
-181,211fold
-212,220fold
-221,236fold
-237,252fold
-253,261fold
-262,286fold
-287,298fold
-299,318fold
-319,334fold
-335,346fold
-347,351fold
-352,359fold
-360,394fold
-395,413fold
-414,426fold
-427,454fold
-455,465fold
-466,496fold
-497,510fold
-511,585fold
-586,659fold
-660,737fold
-738,742fold
-743,747fold
-748,759fold
-760,771fold
+36,50fold
+51,59fold
+60,68fold
+69,94fold
+95,110fold
+111,141fold
+142,153fold
+154,173fold
+174,185fold
+186,220fold
+221,239fold
+240,250fold
+251,281fold
+282,295fold
+296,370fold
+371,444fold
+445,522fold
+523,535fold
+536,551fold
+552,567fold
+568,576fold
+577,599fold
+600,623fold
+624,637fold
+638,653fold
+654,661fold
+662,674fold
+675,681fold
 let &fdl = &fdl
-let s:l = 1 - ((0 * winheight(0) + 21) / 43)
+let s:l = 682 - ((622 * winheight(0) + 21) / 43)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 1
+keepjumps 682
 normal! 0
 let &g:so = s:so_save | let &g:siso = s:siso_save
-nohlsearch
 doautoall SessionLoadPost
 " vim: set ft=vim :
