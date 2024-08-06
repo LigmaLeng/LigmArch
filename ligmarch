@@ -59,7 +59,10 @@ setty() {
   printf '\x1B)U\x1B(K\x0E\x9B?25;7l\x9B31m'
 }
 
-resetty() { printf '\x9B2J\x9Bm\x9B?25;7h\x1B)K\x0F'; stty "$stty_prev";}
+resetty() {
+  printf '\x9B2J\x9Bm\x9B?25;7h\x1B)K\x0F'
+  stty "$stty_prev"
+}
 
 die() {
   trap - EXIT
@@ -69,12 +72,60 @@ die() {
   exit 1
 }
 
-add_to_set() { [[ $(type -t "$2") == function ]] || declare -g "$1_set[$2]"=1;}
+add_to_set() {
+  [[ $(type -t "$2") == function ]] || declare -g "$1_set[$2]"=1
+}
 
 add_option() {
   add_to_set "$@"
   opt_tree_root+=("$2")
   [[ "$1" == simple || "$1" == multi ]] && IFS=$'\n' read -d '' -a "$2"
+}
+
+cache_country_codes() {
+  exec {html}<> <(curl -s "${MIRRORGEN_URL}")
+  until [[ "$REPLY" =~ \<select.*country.*\> ]]; do read -u ${html}; done
+	while read -u ${html}; do # Write to file and Handle quirks for multibyte chars
+		[[ "$REPLY" == *\</select\>* ]] && break
+		[[ "$REPLY" =~ ([A-Z]{2}).*\>(.*)\< ]] || continue
+    case "${BASH_REMATCH[1]}" in
+      TR) : 'TR Turkey';;
+      RE) : 'RE Reunion Island';;
+      *) : "${BASH_REMATCH[*]:1}";;
+    esac
+    printf '%s\n' "$_"
+	done > "${CACHE_DIR}/country_codes"
+  exec {html}>&-
+}
+
+fetch_mirrorlist() {
+  [[ -f "${cachedir}/country_codes" ]] || cache_country_codes &
+  exec {dump_stream}<> <(curl -s "${MIRRORGEN_URL}all/https/")
+  until [[ "$REPLY" =~ ^'## Worldwide' ]]; do read -u ${dump_stream}; done
+  while read -t 0 -u ${dump_stream} && read -u ${dump_stream}; do
+    [[ "$REPLY" != '##'* ]] && continue || : "${REPLY#* }"
+    [[ "$_" == T$'\xC3\xBC'rkiye ]] && : "Turkey"
+    printf '%s\n' "$_"
+  done
+  exec {dump_stream}>&-
+}
+
+fetch_devices() {
+  for dev in /sys/block/{sd,hd,nvme,mmcblk}*;{
+    printf '/dev/%s \xF7 ' ${dev##*/}
+    : $(($(<"$dev/size") * 5120>>30))
+    printf '%s.%cGib\n' ${_:: -1} ${_: -1}
+  }
+}
+
+fetch_locales() {
+  while read; do printf %s\\n "${REPLY%% *}"; done < "/usr/share/i18n/SUPPORTED"
+}
+
+add_firstboot_options() {
+  add_option simple Keymap < <(localectl list-keymaps)
+  add_option simple Locale < <(fetch_locales)
+  add_option simple Timezone < <(timedatectl list-timezones)
 }
 
 display_cleave() {
@@ -531,42 +582,6 @@ wipe_window()
 }
 
 
-cache_country_codes() {
-  exec {html}<> <(curl -s "${MIRRORGEN_URL}")
-  until [[ "$REPLY" =~ \<select.*country.*\> ]]; do read -u ${html}; done
-	while read -u ${html}; do # Write to file and Handle quirks for multibyte chars
-		[[ "$REPLY" == *\</select\>* ]] && break
-		[[ "$REPLY" =~ ([A-Z]{2}).*\>(.*)\< ]] || continue
-    case "${BASH_REMATCH[1]}" in
-      TR) : 'TR Turkey';;
-      RE) : 'RE Reunion Island';;
-      *) : "${BASH_REMATCH[*]:1}";;
-    esac
-    printf '%s\n' "$_"
-	done > "${CACHE_DIR}/country_codes"
-  exec {html}>&-
-}
-
-fetch_mirrorlist() {
-  [[ -f "${cachedir}/country_codes" ]] || cache_country_codes &
-  exec {dump_stream}<> <(curl -s "${MIRRORGEN_URL}all/https/")
-  until [[ "$REPLY" =~ ^'## Worldwide' ]]; do read -u ${dump_stream}; done
-  while read -t 0 -u ${dump_stream} && read -u ${dump_stream}; do
-    [[ "$REPLY" != '##'* ]] && continue || : "${REPLY#* }"
-    [[ "$_" == T$'\xC3\xBC'rkiye ]] && : "Turkey"
-    printf '%s\n' "$_"
-  done
-  exec {dump_stream}>&-
-}
-
-fetch_devices() {
-  for dev in /sys/block/{sd,hd,nvme,mmcblk}*;{
-    printf '/dev/%s \xF7 ' ${dev##*/}
-    : $(($(<"$dev/size") * 5120>>30))
-    printf '%s.%cGib\n' ${_:: -1} ${_: -1}
-  }
-}
-
 process_config()
 {
 	local -l optkey
@@ -603,13 +618,6 @@ ligmarch()
 		packages)
 			process_config;;
 		keymap)
-			localectl list-keymaps > ./keymap/page_file;;
-		locale)
-			localectl list-locales > ./locale/page_file;;
-		timezone)
-			timedatectl list-timezones > ./timezone/page_file;;
-		device)
-			fetch_devices > ./device/page_file;;
 		esac
 	}
 }
@@ -669,6 +677,6 @@ align::center() {
   printf '%*s%s%*s' $pad_left '' "${str:offs:len}" $pad_right ''
 }
 
-fetch_mirrorlist
+add_firstboot_options
 
 # vim: et ts=2 sw=2 ft=sh:
