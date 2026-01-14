@@ -22,4 +22,4 @@ enable ssh.socket
 enable sshdgenkeys.service
 
 disable mpd.service
-enable mpd.socket
+disable mpd.socket
